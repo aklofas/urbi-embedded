@@ -11,20 +11,22 @@ target Make recipes are in [`build-system.md`](./build-system.md).
 The host build is not a port — `make` (POSIX glibc) is the canonical
 development target. Ports below cover bare-metal + RTOS silicon.
 
-**Every port on this page is parked until its own tag.** The core
-re-foundation replaced the runtime these ports were brought up against,
-and none of them has been rebuilt on it: the component manifests, the
-`components/` trees and the `examples/` workloads are all in the tree
-and all out of the build.  The 32-bit memory figures are measured now,
-on a generic Cortex-M4 under qemu's MPS2-AN386 model, through the
-`arm-cortex-m4f` cross preset: a booted VM holds 48,980 bytes live (cap
-49,152), an idle sleeping strand costs 466 bytes, and the leak probes
-stay flat.  `make test-probes-32bit` regenerates them (it needs
-`arm-none-eabi-gcc` with newlib and `qemu-system-arm`; CI runs it) — but
-that preset is generic silicon, not any board below, so the number is
-real without being a claim about one of these ports.  Read what follows
-as a record of what each target needed last time, not as a claim about
-today.
+**The Raspberry Pi Pico is rebuilt on the current core at
+`v0.16.1-pico`** and builds in CI (`cross-pico-repl`); **ESP32-S3 and
+STM32F4 stay parked until their own tags** — the core re-foundation
+replaced the runtime they were brought up against, and neither has been
+rebuilt on it: the component manifests, the `components/` trees and the
+`examples/` workloads are all in the tree and all out of the build.
+The 32-bit memory figures are measured now, on a generic Cortex-M4
+under qemu's MPS2-AN386 model, through the `arm-cortex-m4f` cross
+preset: a booted VM holds 48,980 bytes live (cap 49,152), an idle
+sleeping strand costs 466 bytes, and the leak probes stay flat.
+`make test-probes-32bit` regenerates them (it needs `arm-none-eabi-gcc`
+with newlib and `qemu-system-arm`; CI runs it) — but that preset is
+generic silicon, not any board below, so the number is real without
+being a claim about one of these ports. Read the ESP32-S3 and STM32F4
+entries below as a record of what each target needed last time, not as
+a claim about today; the Pico entry describes what builds now.
 
 ## ESP32-S3 (Espressif, Xtensa LX7)
 
@@ -86,80 +88,37 @@ today.
 
 ## Raspberry Pi Pico (RP2040, Cortex-M0+)
 
-- **Status:** Shipped at `v0.9.4-pico-example` (2026-05-24); parked
-  until its own tag. Hardware verified on a real Raspberry Pi Pico
-  (RP2040, Cortex-M0+, 264 KB SRAM)
-  with the `repl_demo` workload: BOOTSEL press → QSPI_SS bit-bang →
-  debounce → `urbi_inject_event` → event ring → `urbi_step` → C-side
-  `urbi_register_watcher` callback → `gpio_xor_mask` toggles GP25 LED.
-  Full hardware-validation record in
-  [`../release/hardware-validation.md`](../release/hardware-validation.md).
-- **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv6-M Thumb-2 subset
-  (`-mcpu=cortex-m0plus`); soft-float + soft-double + soft-divide via
-  ARM EABI libgcc helpers (`__aeabi_dadd`, `__aeabi_ddiv`, `__aeabi_f2d`,
-  `__aeabi_l2d`, `__aeabi_ldivmod`, `__aeabi_uidiv`,
-  `__atomic_fetch_add_4` for non-LDREX atomics,
-  `__gnu_thumb1_case_uqi` for Thumb1 switch tables, plus `memcpy` /
-  `memset` / `strlen`). Full archive symbol set pinned in
-  `tests/golden/v0.9.4-pico-nm-bytecode-only.txt`. The `__aeabi_d*`
-  double-precision helpers are what UVAL_FLOAT arithmetic uses: floats
-  are always `double`, which on an FPU-less core is libgcc soft-float.
-- **Footprint:** Full **114 713 B** / **112.0 KB** (88.2 % of the
-  **130 KB** cap; xpack `arm-none-eabi-gcc` 14.2.1 @ `-Os`, calibrated
-  2026-05-24 from `7fbb17d` on main). Bytecode-only **82 599 B** /
-  **80.7 KB** (84.9 % of the **95 KB** cap). Larger than the STM32F4
-  (M4F) at the same workload because the M0+ has no FPU, no integer-
-  divide hardware, and no LDREX/STREX — every float op, every `/`/`%`,
-  and every atomic goes through libgcc helpers (`__aeabi_d*`,
-  `__aeabi_uidiv`, `__atomic_fetch_add_4`, `__gnu_thumb1_case_uqi`).
-  repl_demo.uf2 on-flash footprint measured during hardware bring-up.
-  Calibration commands:
-  `arm-none-eabi-size build/arm-cortex-m0plus/liburbi.a` (full) and
-  `arm-none-eabi-size build/arm-cortex-m0plus-bytecode-only/liburbi.a`
-  (BO) — the Pico's own preset once it is rebuilt on the current core.
-  Caps documented in CHANGELOG entry `v0.9.4-pico-example` footprint table.
-- **Numeric:** Float values are always double (f64); the M0+ has no
-  FPU so all float arithmetic goes through libgcc soft-float helpers.
-- **REPL transports:** USB CDC (primary, via TinyUSB) on the native
-  USB pins, UART0 (secondary, GP0/GP1). Both have
-  `pollable_fd_fn == NULL` and drive `urbi_repl_serve_step`
-  cooperatively from the main loop.
-- **Build system:** CMake-native via pico-sdk
-  (`tools/pico-sdk/external/pico_sdk_import.cmake`); consumes
-  liburbi.a as an `IMPORTED STATIC` library from
-  `build/arm-cortex-m0plus/`. No autotools, no idf.py.
+- **Status:** rebuilt on the current core at `v0.16.1-pico`; builds in
+  CI (`cross-pico-repl`); the board log that closes the tag is
+  recorded in
+  [`../release/hardware-validation.md`](../release/hardware-validation.md)
+  once the owner runs it.
+- **Toolchain and SDK:** xpack `arm-none-eabi-gcc` 14.2.1, pico-sdk
+  2.2.0 (TinyUSB 0.18), the `arm-cortex-m0plus` preset in its hosted
+  shape (`make cross-arm-cortex-m0plus-hosted`, 146,760 B
+  text+data+bss at this tag). Soft-float through libgcc; floats are
+  always `double`.
+- **Shape of the example:** CMake imports the archive; `bake.cmake`
+  runs the host `urbi --dump-wire-format` on `repl_demo.u`; the two
+  `UTransport` adapters live in the example
+  (`main/transport_usb_cdc.c`, `main/transport_uart.c`); verbs sit on
+  `Lobby`, events on `Object` via `urbi_event_value`; a 32 KB stack at
+  the top of SRAM comes from `memmap_repl_demo.ld`; the heap budget is
+  the linker's heap minus a 16 KB session reserve; compile budget
+  depth 24 / nodes 2,000 / source 4 KB.
 - **Idiosyncrasies:**
-  - **No integer divide hardware.** Every `/` and `%` on `int32_t` /
-    `uint64_t` goes through libgcc soft-divide helpers; the freestanding
-    golden symbol list pins this expectation.
-  - **BOOTSEL button** is the only onboard button and reading it
-    requires QSPI_SS bit-bang with a ~30 µs interrupt-off window
-    (`save_and_disable_interrupts` / `restore_interrupts` around the
-    sample). See `bsp/button.c` in the repl_demo example.
-  - **On-die temperature sensor** is on ADC4; raw value passes through
-    the SDK's calibration formula `27 - (V_be - 0.706) / 0.001721`
-    with ~±5°C accuracy.
-  - **TinyUSB CDC** is single-host: only one CDC interface, only one
-    attached host at a time. Multi-client REPL on USB is not
-    physically possible — pair with UART0 for the second channel.
-  - Two-core (Cortex-M0+ × 2); core1 is dormant unless the embedder
-    explicitly starts it. liburbi.a is single-VM-per-thread and runs
-    on core0 only.
-- **Known limitations (v1.x deferrals from hardware bring-up):**
-  - **REPL session model too heavy for ~256 KB SRAM.** Per-session realm
-    and `lobby.u` compile needs >50 KB on top of the stdlib_boot baseline
-    (~165 KB); the Pico's ~241 KB usable heap cannot accommodate the
-    first session. The `repl_demo` ships with REPL service skipped; a
-    C-side `urbi_register_watcher` callback provides the interactive
-    surface instead. Two remediation paths are sketched (lightweight-
-    session option, `URBI_STDLIB_MINIMAL` build flag) — both deferred
-    to v1.x.
-  - **`whenever (named_event) { body }` does not fire on
-    cooperative-only builds.** Event injection via `urbi_inject_event`
-    reaches the watcher-install check, but the body strand is never
-    scheduled without the listener pthread. Use C-side
-    `urbi_register_watcher` as the equivalent workaround on cooperative
-    targets.
+  - **BOOTSEL button** is the only onboard button; reading it requires
+    the QSPI_SS bit-bang trick with interrupts off for the sample.
+  - **On-die temperature sensor** is on ADC4.
+  - **TinyUSB CDC** is single-host: one CDC interface, so one USB
+    session at a time; UART0 carries the second channel.
+  - Two-core (Cortex-M0+ × 2); core1 stays dormant.
+  - No integer-divide hardware: every `/` and `%` goes through libgcc
+    soft-divide helpers.
+- **Known limits:** the eval service's framing cap is fixed at 1 MiB
+  (`UREPL_MAX_LINE` in `src/repl/urepl_ndjson.h`, not exposed through
+  `UReplConfig`); UART input latency runs up to the 100 ms tick when
+  the main loop is otherwise idle.
 - **Pico SDK pin:** `2.2.0` at commit
   `a1438dff1d38bd9c65dbd693f0e5db4b9ae91779` (recorded in
   [`../reference/embedded-port-sources.md`](../reference/embedded-port-sources.md)).

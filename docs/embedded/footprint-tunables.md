@@ -18,10 +18,10 @@ tuning story rather than drifting per-target.
 | `URBI_IC_ENTRIES_PER_SITE` | `object/uic.h` | `4` | `2` | inline-cache ways per call site |
 | `URBI_CLEANUP_MAX` | `runtime/ucleanup.h` | `64` | `16` | cleanup slots per strand |
 
-The `make cross-arm`, `cross-riscv`, `cross-stm32f4`, `cross-pico`,
-`cross-pico-repl`, and `cross-esp32s3-full` targets apply `FOOTPRINT_CFLAGS`
-automatically. Custom embedder builds can pass the same `-D` set, or override
-individual knobs to trade RAM for headroom.
+The `cross-<preset>` targets and the example builds that consume their
+archives apply `FOOTPRINT_CFLAGS` automatically. Custom embedder builds
+can pass the same `-D` set, or override individual knobs to trade RAM
+for headroom.
 
 ## `UVM_STACK_CAP` — the per-port register-stack knob (H10)
 

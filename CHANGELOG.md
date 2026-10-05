@@ -1,5 +1,89 @@
 # Changelog
 
+## v0.16.1-pico — 2026-10-DD
+
+The Raspberry Pi Pico example is rebuilt on the re-founded core: a
+hosted Cortex-M0+ archive, a host-baked boot workload, and the eval
+service running two sessions (USB CDC, UART0) from a cooperative main
+loop. One board-driven C API addition. ABI 0/27/0 -> 0/28/0. Wire
+format unchanged at v2.0 / `0x20`.
+
+### Added
+
+- `urbi_event_value(UVM *vm, urbi_event_id_t id, UValue *out)`: reads
+  back the value cell a registered event id names, the bridge an
+  interrupt handler needs to hand script a payload it can only inject
+  by id.
+- The Pico example, rebuilt: CMake imports the hosted Cortex-M0+
+  archive; `bake.cmake` compiles `repl_demo.u` on the host into baked
+  bytecode; the two `UTransport` adapters (USB CDC, UART0) now live in
+  the example and drive the eval service cooperatively from the main
+  loop; fixtures sit on `Lobby` and events on `Object` via
+  `urbi_event_value`; `memmap_repl_demo.ld` puts a 32 KB stack at the
+  top of SRAM above the heap; the heap budget is the linker's heap
+  minus a 16 KB session reserve, under a compile budget of depth 24 /
+  2,000 nodes / 4 KB source; one `make pico-repl-demo` target builds
+  the host `urbi`, the hosted archive, and the firmware.
+- The `cross-pico-repl` CI job: installs the xpack toolchain and
+  pico-sdk 2.2.0, runs `make pico-repl-demo`, prints the firmware
+  footprint, and uploads the `.uf2` as a build artifact.
+- Seven host-side pins for the eval service's board contract
+  (`tests/unit/test_repl_sessions.c`): the shim's configuration boots a
+  standard library; host fixtures on `Lobby` and an event on `Object`
+  are visible unqualified from a session's own realm; the Pico boot
+  workload runs and a session can stop it; a session reopened after
+  close costs within a kilobyte of the first; a session closed with a
+  periodic running leaves nothing behind; a line over the source
+  budget is refused without ending the session; and output past the
+  framing cap is reported dropped without ending the session.
+
+### Changed (public C API, ABI 0/28/0)
+
+- One new function, `urbi_event_value`, nothing else. A board tag
+  moving the MINOR version is the documented exception (spec §8:
+  "unless a bring-up forces an API change") — this bring-up did: no
+  existing call returned the value cell an interrupt-registered event
+  id names.
+
+### Removed
+
+- The Pico example's references to the deleted transport files
+  (`src/repl/urepl_transport_usb_cdc_pico.c`,
+  `src/repl/urepl_transport_uart_pico.c`), the
+  `tools/urbi-compile-stdlib-pico` tool and its `URBI_PICO_*` build
+  defines, and the C-side button watcher (`urbi_register_watcher` +
+  `gpio_xor_mask`) — the rewritten example uses `urbi_event_value` and
+  a script-side `at (pressed?)` instead. The symbol-set golden
+  `tests/golden/v0.9.4-pico-nm-bytecode-only.txt` is retired; footprint
+  is recorded in this CHANGELOG, not gated.
+
+### Documentation
+
+- `docs/internals/ports.md`'s Pico section rewritten for what builds at
+  this tag; the "every port is parked" framing in that file and in
+  `docs/release/port-build-flash-guide.md` now carves out the Pico.
+- `docs/release/hardware-validation.md`, `docs/release/release-readiness.md`,
+  `docs/reference/embedded-port-sources.md`,
+  `docs/embedded/footprint-tunables.md`, `docs/internals/build-system.md`,
+  `docs/release/test-tiers.md`, `docs/README.md`, `README.md` and
+  `CONTRIBUTING.md` updated to match: the Pico builds in CI
+  (`cross-pico-repl`) with its board log pending; ESP32-S3 and STM32F4
+  stay parked until their own tags.
+- The eval service's framing cap (1 MiB, not configurable through
+  `UReplConfig`) filed as a design risk.
+
+### Measured on this build
+
+| Number | Value |
+|---|---|
+| firmware `repl_demo.elf` (text / data / bss) | 280,136 / 0 / 4,428 bytes (284,564 total) |
+| firmware `repl_demo.uf2` | 552,448 bytes |
+| hosted Cortex-M0+ archive, `build/arm-cortex-m0plus-hosted/liburbi.a` | 146,760 bytes text+data+bss |
+| host session cost (64-bit) | boot 71,273 bytes; after the first session's close, 71,420; after the second, 71,420 (a reopen costs nothing further) |
+| 32-bit boot heap (qemu probe) | 48,980 bytes live in 994 blocks, unchanged by this tag; cap 49,152 |
+| runners | unit 584 cases / 0 failed (577 + 7 new); runtime (rt) 254 / 0 (252 + 2 new); corpus (chk) 369 / 0 |
+| board figures | pending the board log |
+
 ## v0.16.0-shell — 2026-10-04
 
 The build shell, the cross-compile presets, and the networked eval

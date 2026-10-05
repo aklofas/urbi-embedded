@@ -40,7 +40,7 @@ For contributors building or modifying the C99 implementation.
 - [The runtime](internals/runtime.md) — values, the collector, objects, strands, the scheduler, errors, realms, booting
 - [Reactive runtime](internals/reactive-runtime.md) — watchers in full: modes, the dirty set, the drain
 - [Error channels](internals/error-channels.md) — where a failure goes and who can see it
-- [Embedded ports](internals/ports.md) — per-target record; all parked until their own tag
+- [Embedded ports](internals/ports.md) — per-target record; the Pico is rebuilt on this core, ESP32-S3 and STM32F4 are parked until their own tags
 - [Design decisions](internals/design-decisions.md) — rationale log for implementation choices
 - [Test harness](internals/test-harness.md) — the four runners and how to add to each
 - [Code style](STYLE.md) — C naming, memory model, freestanding discipline, const-correctness
@@ -128,7 +128,7 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | [Design decisions](internals/design-decisions.md) | Rationale log: choices made during implementation with the alternatives that were rejected | `v0.1.0-skeleton` |
 | [Reactive runtime](internals/reactive-runtime.md) | One watcher type: modes, the dirty set, the drain, what an `at` edge means and why `whenever` is level-triggered | `v0.5.0-reactive` |
 | [Error channels](internals/error-channels.md) | Where a runtime failure goes and who can observe it | `v0.13.6-consistency` |
-| [Embedded ports](internals/ports.md) | Per-target bring-up record; every port is parked until its own tag | `v0.7.2-esp32` |
+| [Embedded ports](internals/ports.md) | Per-target bring-up record; the Pico is rebuilt on this core, ESP32-S3 and STM32F4 are parked until their own tags | `v0.7.2-esp32` |
 | [REPL service](internals/repl-service.md) | The NDJSON eval protocol and the cooperative service | `v0.9.1-repl-service` |
 | [Assertion discipline](internals/assertion-discipline.md) | `URBI_REQUIRE` vs `URBI_INTERNAL_ASSERT`: which fires where, and when to use which | `v0.10.1-invariants` |
 | [Build system](internals/build-system.md) | Targets, build directories, flag stamping, the stdlib bake cycle | `v0.6.1-stdlib` |

@@ -38,6 +38,11 @@ archive only; host tools are never cross-built.
 | `make cross-<preset>-bytecode-only` | `build/<preset>-bytecode-only/liburbi.a` | `URBI_BYTECODE_ONLY=1`: no compiler, no `src/host`, no `src/repl`; the archive gate runs on it |
 | `make cross-<preset>-hosted` | `build/<preset>-hosted/liburbi.a` | `URBI_HOSTED=1` drops `-ffreestanding`, for parts that link a libc |
 
+`make pico-repl-demo` builds the host `urbi`, the hosted Cortex-M0+
+archive, and the Raspberry Pi Pico example through pico-sdk's CMake; it
+needs the SDK (`PICO_SDK_PATH`, or `../tools/pico-sdk`) and is not part
+of `releasetest`; CI runs it as `cross-pico-repl`.
+
 The cross build compiles the tracked `src/stdlib/urbi_stdlib_bytecode.gen.c`
 like any other source. The bake tool that produces it is host-only and
 never runs in a cross build.

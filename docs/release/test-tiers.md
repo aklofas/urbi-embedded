@@ -37,6 +37,9 @@ make test
 it needs `arm-none-eabi-gcc` and `qemu-system-arm`, neither of which
 `releasetest` requires.
 
+`make pico-repl-demo` (the Raspberry Pi Pico example firmware) is also
+CI-only — it needs pico-sdk, which `releasetest` does not require.
+
 **Phase 2** (sequential, after Phase 1 completes):
 
 - `test-valgrind` — Valgrind memcheck under the full unit + .chk suite

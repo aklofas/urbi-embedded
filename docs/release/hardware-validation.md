@@ -9,6 +9,22 @@
 
 ## Raspberry Pi Pico (RP2040 / Cortex-M0+)
 
+### 2026-10-DD — v0.16.1-pico (board log pending)
+
+- **Board:** Raspberry Pi Pico (RP2040, dual Cortex-M0+, no FPU, no divide unit).
+- **Toolchain:** xpack-arm-none-eabi-gcc 14.2.1.
+- **SDK:** pico-sdk 2.2.0.
+- **Firmware artifact:** `examples/pico/repl_demo/build/repl_demo.uf2` (552,448 B).
+- **Smoke steps:**
+  1. Boot heap: the `boot heap:` line shows `alloc live` under 49,152 B.
+  2. Three evals: `echo("hi")` prints and returns `nil`; `1+1` returns `2`; `temp_celsius()` returns a float.
+  3. Watcher from the session: after `boot.stop()`, BOOTSEL no longer toggles the LED; after `at (pressed?) led_toggle()`, BOOTSEL toggles it on each press.
+  4. Periodic print: a one-second `every` tag prints a temperature once a second, then stops on `t.stop()`.
+  5. Session reopen: the `session open:` line's `alloc live` is within 1,024 B across a close and reopen.
+  6. Idle: two `idle:` lines 30 s apart show the same `alloc live`.
+- **Observed output:** pending: the owner's picocom log is pasted here and closes the tag.
+- **Verifier:** the owner.
+
 ### 2026-05-24 — v0.9.4-pico-example
 
 - **Board:** Raspberry Pi Pico (RP2040, dual Cortex-M0+, no FPU, no divide unit).

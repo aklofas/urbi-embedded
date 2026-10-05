@@ -7,8 +7,9 @@ SDKs are vendored into the urbi-embedded repository; they live as peer
 checkouts alongside the repository and are picked up by per-target
 Makefiles + CMake glue.
 
-For per-target build recipes (`cross-arm`, `cross-pico`, `cross-esp32s3`,
-...), see [internals/build-system.md](../internals/build-system.md).
+For per-target build recipes (`cross-arm-cortex-m0plus`, `cross-arm-cortex-m4f`,
+`cross-arm-cortex-m7`, `cross-riscv32`, ...), see
+[internals/build-system.md](../internals/build-system.md).
 For per-silicon footprint + idiosyncrasy notes, see
 [internals/ports.md](../internals/ports.md).
 
@@ -53,9 +54,10 @@ For per-silicon footprint + idiosyncrasy notes, see
   pico-sdk's CMake glue auto-selects `-mcpu=cortex-m0plus` etc. based
   on `PICO_BOARD`.
 - **First used by:** `v0.9.4-pico-example` (2026-05-20).
-- **Submodules required:** `btstack`, `cyw43-driver`, `lwip`,
-  `mbedtls` (+ `mbedtls/framework`), `tinyusb` — checkout with
-  `git submodule update --init --recursive`.
+- **Submodules required:** `tinyusb` only, for this example — checkout
+  with `git submodule update --init --depth 1 lib/tinyusb`. `btstack`,
+  `cyw43-driver`, `lwip` and `mbedtls` (+ `mbedtls/framework`) are what
+  the full pico-sdk carries; this example does not need them.
 - **Submodule pins** (informational; carried by the pico-sdk tag,
   recorded here so a partial clone can be reproduced manually):
   - `btstack` — `501e6d2b`
@@ -68,11 +70,11 @@ For per-silicon footprint + idiosyncrasy notes, see
     `pico_sdk_import.cmake` shim vendored next to the example's
     `CMakeLists.txt`.
   - liburbi.a is exposed to the example via `IMPORTED STATIC` from
-    `build/arm-cortex-m0plus/liburbi.a`; the pico-sdk handles every
-    other linker-script + reset-vector concern.
-  - TinyUSB CDC drives the primary REPL transport
-    (`UREPL_USB_CDC_PICO_TRANSPORT`); see
-    [`../embedding-guide.md`](../embedding-guide.md) §12.
+    `build/arm-cortex-m0plus-hosted/liburbi.a`; the pico-sdk handles
+    every other linker-script + reset-vector concern.
+  - The USB CDC and UART0 REPL transports live in
+    `examples/pico/repl_demo/main/` (`transport_usb_cdc.c`,
+    `transport_uart.c`), not in pico-sdk itself.
 
 ## See also
 

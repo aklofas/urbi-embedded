@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** tagged `v0.16.1-pico`, which builds the shell around the re-founded core: four generic cross-compile presets exercised in CI, a host-declared heap budget the collector paces against, a scheduler fix for a strand that survives an inner `stop` under an outer `block` or `freeze`, and a single-threaded `urbi-server` tool that takes over the eval service's TCP and Unix transports from the library. The language is intact: separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally`. The parser does every desugar (32 AST kinds, down from 49) and the emitter is a single-cursor design with pinned temporaries, writing a bytecode format (41 opcodes, an `EXTARG` prefix for slot sites above 255) that the unwinder walks directly to run `finally` bodies on both the normal path and a jump. 369 conformance fixtures pass against it with none failing. Measured on this build: a booted VM costs 67,702 bytes on a 64-bit host, an idle strand 616 bytes, and a ten-thousand-iteration loop gives every byte back. The ROS2 bridge and every hardware board are parked and return at their own tag; the networked eval service returns in this one, as the separate tool below. ABI 0/28/0; wire v2.0 / 0x20.
+**Status:** tagged `v0.16.1-pico`: the Raspberry Pi Pico example is rebuilt on the re-founded core, with a hosted Cortex-M0+ archive, a baked boot workload, and the eval service serving sessions over USB CDC and UART0, all through one `make pico-repl-demo` target and a CI job (`cross-pico-repl`). The one C API addition, `urbi_event_value`, exists because the board's event-bound fixtures need to read back the value cell an interrupt-registered event id names, and no existing call did. ABI 0/28/0; wire v2.0 / 0x20 unchanged; the board log that closes the tag is still pending. The language is intact: separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally`. The parser does every desugar (32 AST kinds, down from 49) and the emitter is a single-cursor design with pinned temporaries, writing a bytecode format (41 opcodes, an `EXTARG` prefix for slot sites above 255) that the unwinder walks directly to run `finally` bodies on both the normal path and a jump.
 
 ## 30-second quickstart
 
@@ -16,7 +16,7 @@ echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
 ./build/host/urbi -i                     # interactive REPL
 ```
 
-Embedding a VM in your own C program is one header and a handful of calls — the [embedding guide](docs/embedding-guide.md) walks a complete program, and the build compiles every sample on that page and runs the complete one. The MCU ports (Pico, ESP32-S3, STM32F4) are parked while the core settles; [the ports guide](docs/internals/ports.md) records what each one needed.
+Embedding a VM in your own C program is one header and a handful of calls — the [embedding guide](docs/embedding-guide.md) walks a complete program, and the build compiles every sample on that page and runs the complete one. The Pico port is rebuilt on this core; ESP32-S3 and STM32F4 are parked until their own tags; [the ports guide](docs/internals/ports.md) records what each one needed.
 
 ## Design goals
 
@@ -33,7 +33,7 @@ Embedding a VM in your own C program is one header and a handful of calls — th
 | Target | Status | Note |
 |---|---|---|
 | Linux x86_64 (host) | shipped | the canonical development target; the whole CI matrix runs here |
-| Raspberry Pi Pico (RP2040 / Cortex-M0+) | parked | brought up and hardware-validated against the previous core; re-attached at its own tag |
+| Raspberry Pi Pico (RP2040 / Cortex-M0+) | builds (CI) — board log pending | rebuilt on the re-founded core; the owner's hardware run closes the tag |
 | ESP32-S3 (Xtensa LX7) | parked | brought up and hardware-validated (eye_demo); re-attached at its own tag |
 | STM32F4 (Cortex-M4F) | parked | brought up and hardware-validated (Mandelbrot demo); re-attached at its own tag |
 | ARM Cortex-M7 (generic) | archive build (CI) | cross-compiled, archive-gated, and footprint-measured on every push; no board attached |
@@ -47,9 +47,10 @@ the freestanding-archive gate on every push — see
 names and shapes. The `arm-cortex-m4f` preset also boots and runs under qemu's
 Cortex-M4 model, where a booted VM now measures 48,980 bytes and an idle
 strand 466 bytes: the 32-bit figure this page used to promise for later
-is measured for real. The three real boards above were brought up and
-hardware-validated against a runtime this core has since replaced; none
-has been rebuilt on the new one yet, and each returns at its own tag.
+is measured for real. All three real boards above were brought up and hardware-validated
+against a runtime this core has since replaced. The Pico has now been
+rebuilt on the current core, pending its own board log; ESP32-S3 and
+STM32F4 have not been rebuilt yet, and each returns at its own tag.
 
 ## Build
 

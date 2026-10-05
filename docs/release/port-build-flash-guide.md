@@ -5,16 +5,19 @@ port. The goal is **≤ 5 minutes from clone to a running demo** on each
 architecture. Both the host-side build of all firmware and hardware flashing
 are manual and documented per-architecture below.
 
-**Every embedded target below is parked until its own tag.** The core
-re-foundation replaced the runtime each one was brought up against, and
-none of the three component manifests / `examples/` workloads has been
-rebuilt on it. Section 1 (the Linux host) builds and runs today; the
-steps in sections 2-4 are kept as a record of what worked at each
-port's own ship tag, not as commands that build against the tree as it
-stands. The generic Cortex-M0+/M4F/M7/RISC-V archives build and are
-footprint-measured on every push through the cross presets in
-[the build system doc](../internals/build-system.md), but nothing wires
-one into any of these three examples yet.
+**The Raspberry Pi Pico builds from this tree with `make
+pico-repl-demo`; ESP32-S3 and STM32F429I-DISC1 are parked until their
+own tags.** The core re-foundation replaced the runtime the latter two
+were brought up against, and neither's component manifest /
+`examples/` workload has been rebuilt on it. Section 1 (the Linux
+host) builds and runs today; section 2 (the Pico) builds and flashes
+from this tree; the steps in sections 3-4 are kept as a record of what
+worked at each port's own ship tag, not as commands that build against
+the tree as it stands. The generic Cortex-M0+/M4F/M7/RISC-V archives
+build and are footprint-measured on every push through the cross
+presets in [the build system doc](../internals/build-system.md); the
+Pico example wires in its own hosted shape of the Cortex-M0+ archive,
+and nothing wires one into the other two examples yet.
 
 ```sh
 git clone <repo-url> urbi-embedded
@@ -29,7 +32,7 @@ Work through the per-architecture steps below on a pristine tree (no stale
 | Target | Toolchain | SDK / HAL | Flash tool |
 |--------|-----------|-----------|------------|
 | Linux host REPL | any C99 `cc` (gcc/clang) | — | — |
-| Raspberry Pi Pico (RP2040) | `arm-none-eabi-gcc` (xpack 14.2.1) | pico-sdk 2.2.0 (`PICO_SDK_PATH`) | drag-drop `.uf2` (BOOTSEL) |
+| Raspberry Pi Pico (RP2040) | `arm-none-eabi-gcc` (xpack 14.2.1) + CMake 3.13+ | pico-sdk 2.2.0 (`PICO_SDK_PATH`, default `../tools/pico-sdk`) | drag-drop `.uf2` (BOOTSEL) |
 | ESP32-S3 | ESP-IDF v6.0.1 (`IDF_PATH`, `. $IDF_PATH/export.sh`) | bundled in IDF | `idf.py flash` |
 | STM32F429I-DISC1 | `arm-none-eabi-gcc` (xpack 14.2.1) | STM32CubeF4 v1.28.2 headers (vendored) | `st-flash` (stlink) |
 
@@ -41,28 +44,18 @@ echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
 ./build/host/urbi -i                      # interactive REPL
 ```
 
-## 2. Raspberry Pi Pico — `examples/pico/repl_demo` (parked until its own tag)
-
-`cross-pico-repl` and `test-cross-pico-repl-elf` are retired target
-names from before the cross presets; the example's CMake also still
-names two REPL transport files this core deleted, so it does not build
-today. Kept as a record of the steps that worked at `v0.9.4-pico-example`:
+## 2. Raspberry Pi Pico — `examples/pico/repl_demo`
 
 ```sh
-export PICO_SDK_PATH=/path/to/pico-sdk    # or place it at ../tools/pico-sdk
-make test-cross-pico-repl-elf
+make pico-repl-demo            # host urbi + hosted Cortex-M0+ archive + CMake build
 # -> examples/pico/repl_demo/build/repl_demo.uf2
 ```
 
-(`make cross-pico-repl` alone built only the cross `liburbi.a`; the flashable
-`.uf2` came from the pico-sdk CMake flow that `test-cross-pico-repl-elf` drove.
-The `arm-cortex-m0plus` preset is the Cortex-M0+ archive's current name.)
-
 Flash: hold **BOOTSEL**, plug USB, drag `repl_demo.uf2` onto the `RPI-RP2`
-volume. Open the USB-CDC serial port (`minicom -D /dev/ttyACM0 -b 115200`);
-you get a REPL banner. Type `1 + 2` → `3`. Pressing **BOOTSEL** toggles the
-GP25 LED via a registered C watcher. (The full REPL is tight on RP2040 SRAM —
-see the v0.9.4 notes; the C-side watcher path is the load-bearing demo.)
+volume. Connect: `picocom -b 115200 --omap crlf --imap lfcrlf /dev/ttyACM0`.
+Each request is one JSON object per line; `{"id":1,"op":"eval","code":"1+1"}`
+answers with `"value":"2"`. Full build, flash, wire and known-limits detail
+is in [the example's own README](../../examples/pico/repl_demo/README.md).
 
 ## 3. ESP32-S3 — `examples/esp32/eye_demo` (parked until its own tag)
 

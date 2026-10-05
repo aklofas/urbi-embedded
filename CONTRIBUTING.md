@@ -187,7 +187,7 @@ Format:
 | `repl:` | The cooperative eval service (`src/repl/`) |
 | `tools:` | Anything under `tools/` |
 | `ros:` | micro-ROS bridge (`src/ros/`) — parked; it returns with its own tag once a ROS environment is available |
-| `port:` | ESP-IDF / STM32 / Xtensa integration — parked until its own tag |
+| `port:` | board examples and their build glue (`examples/`, `components/`); the Pico is live, ESP-IDF and STM32 return with their tags |
 
 The runtime is one prefix, not ten. Before the core re-foundation it was
 `vm:`, `gc:`, `sched:`, `object:`, `realm:`, `react:` and `runtime:`
