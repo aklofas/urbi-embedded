@@ -19,10 +19,15 @@ format unchanged at v2.0 / `0x20`.
   bytecode; the two `UTransport` adapters (USB CDC, UART0) now live in
   the example and drive the eval service cooperatively from the main
   loop; fixtures sit on `Lobby` and events on `Object` via
-  `urbi_event_value`; `memmap_repl_demo.ld` puts a 32 KB stack at the
-  top of SRAM above the heap; the heap budget is the linker's heap
-  minus a 16 KB session reserve, under a compile budget of depth 24 /
-  2,000 nodes / 4 KB source; one `make pico-repl-demo` target builds
+  `urbi_event_value`; `memmap_repl_demo.ld` puts a 64 KB stack at the
+  top of SRAM above the heap, with the SDK's MPU stack guard at its
+  bottom (`PICO_USE_STACK_GUARDS`) routed to the error pattern; the
+  heap budget is the linker's heap minus a 16 KB session reserve,
+  under a compile budget of depth 12 / 1,000 nodes / 1 KiB source,
+  sized to stack use measured through the eval service (16,880 B at
+  `1+1`, 2,976 B worst per expression-nesting level); UART0 output no
+  longer trickles while idle, because the loop does not sleep with a
+  UART write part-way out; one `make pico-repl-demo` target builds
   the host `urbi`, the hosted archive, and the firmware.
 - The `cross-pico-repl` CI job: installs the xpack toolchain and
   pico-sdk 2.2.0, runs `make pico-repl-demo`, prints the firmware
@@ -76,7 +81,7 @@ format unchanged at v2.0 / `0x20`.
 
 | Number | Value |
 |---|---|
-| firmware `repl_demo.elf` (text / data / bss) | 280,136 / 0 / 4,428 bytes (284,564 total) |
+| firmware `repl_demo.elf` (text / data / bss) | 280,232 / 0 / 4,428 bytes (284,660 total) |
 | firmware `repl_demo.uf2` | 552,448 bytes |
 | hosted Cortex-M0+ archive, `build/arm-cortex-m0plus-hosted/liburbi.a` | 146,823 bytes text+data+bss |
 | host session cost (64-bit) | boot 71,273 bytes; after the first session's close, 71,420; after the second, 71,420 (a reopen costs nothing further) |

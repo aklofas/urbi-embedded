@@ -102,10 +102,12 @@ a claim about today; the Pico entry describes what builds now.
   runs the host `urbi --dump-wire-format` on `repl_demo.u`; the two
   `UTransport` adapters live in the example
   (`main/transport_usb_cdc.c`, `main/transport_uart.c`); verbs sit on
-  `Lobby`, events on `Object` via `urbi_event_value`; a 32 KB stack at
-  the top of SRAM comes from `memmap_repl_demo.ld`; the heap budget is
-  the linker's heap minus a 16 KB session reserve; compile budget
-  depth 24 / nodes 2,000 / source 4 KB.
+  `Lobby`, events on `Object` via `urbi_event_value`; a 64 KB stack at
+  the top of SRAM comes from `memmap_repl_demo.ld`, with the SDK's MPU
+  stack guard at its bottom (`PICO_USE_STACK_GUARDS`); the heap budget
+  is the linker's heap minus a 16 KB session reserve; compile budget
+  depth 12 / nodes 1,000 / source 1 KiB, sized to measured stack use
+  (16,880 B at `1+1`, 2,976 B worst per expression-nesting level).
 - **Idiosyncrasies:**
   - **BOOTSEL button** is the only onboard button; reading it requires
     the QSPI_SS bit-bang trick with interrupts off for the sample.
@@ -117,8 +119,11 @@ a claim about today; the Pico entry describes what builds now.
     soft-divide helpers.
 - **Known limits:** the eval service's framing cap is fixed at 1 MiB
   (`UREPL_MAX_LINE` in `src/repl/urepl_ndjson.h`, not exposed through
-  `UReplConfig`); UART input latency runs up to the 100 ms tick when
-  the main loop is otherwise idle.
+  `UReplConfig`); the parser's depth budget counts expression nesting
+  only, so deep statement or brace nesting inside the 1 KiB source cap
+  can still reach the stack guard, which faults to the error pattern.
+  UART0 input arrives through an RX-interrupt ring, and the main loop
+  does not sleep while UART0 output is part-way out.
 - **Pico SDK pin:** `2.2.0` at commit
   `a1438dff1d38bd9c65dbd693f0e5db4b9ae91779` (recorded in
   [`../reference/embedded-port-sources.md`](../reference/embedded-port-sources.md)).

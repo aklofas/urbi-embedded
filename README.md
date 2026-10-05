@@ -60,7 +60,7 @@ make
 
 Produces `build/host/liburbi.a`. Every build variant (debug, sanitizers, coverage) lands in its own `build/<TARGET>/` subtree — see `CONTRIBUTING.md` for the list.
 
-The public API is 44 functions in `<urbi/urbi.h>`, with values in `<urbi/types.h>`, version macros in `<urbi/version.h>` and the optional eval service in `<urbi/repl.h>`. The headers are self-contained: `-Iinclude` is the whole include path an embedder needs. `docs/embedding-guide.md` is the contract.
+The public API is 45 functions in `<urbi/urbi.h>`, with values in `<urbi/types.h>`, version macros in `<urbi/version.h>` and the optional eval service in `<urbi/repl.h>`. The headers are self-contained: `-Iinclude` is the whole include path an embedder needs. `docs/embedding-guide.md` is the contract.
 
 ## Using the REPL
 
