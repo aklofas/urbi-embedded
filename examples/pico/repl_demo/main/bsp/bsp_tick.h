@@ -5,7 +5,7 @@
  * (TIMER_IRQ_0).  Each tick:
  *   1. Re-arms next alarm at now+100ms.
  *   2. Calls bsp_button_poll_isr(vm) so BOOTSEL state is sampled at
- *      100 Hz alongside the script-visible `tick` event.
+ *      10 Hz alongside the script-visible `tick` event.
  *   3. Fires the `tick` named event via urbi_inject_event.
  *
  * Two entry points:

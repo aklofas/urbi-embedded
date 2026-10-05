@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 #include "transport_uart.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "hardware/irq.h"
@@ -39,12 +40,16 @@ static int uart_rd(void *ctx, void *buf, size_t n)
     return (int)i;
 }
 
+/* The service's last write left part of its offer unwritten. */
+static bool s_tx_pending;
+
 static int uart_wr(void *ctx, const void *buf, size_t n)
 {
     uart_inst_t *u = (uart_inst_t *)ctx;
     const uint8_t *p = (const uint8_t *)buf;
     size_t i = 0;
     while (i < n && uart_is_writable(u)) uart_putc_raw(u, (char)p[i++]);
+    s_tx_pending = i < n;
     return (int)i;
 }
 
@@ -63,3 +68,5 @@ void transport_uart_vtable(uart_inst_t *uart, UTransport *out)
     out->write = uart_wr;
     out->close = uart_cl;
 }
+
+bool transport_uart_output_pending(void) { return s_tx_pending; }

@@ -77,9 +77,9 @@ static UReplConfig shim_repl_config(void)
     UReplConfig cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.output_buf_cap = 4096;
-    cfg.default_budget.max_parser_depth = 24;
-    cfg.default_budget.max_ast_nodes    = 2000;
-    cfg.default_budget.max_source_bytes = 4096;
+    cfg.default_budget.max_parser_depth = 12;
+    cfg.default_budget.max_ast_nodes    = 1000;
+    cfg.default_budget.max_source_bytes = 1024;
     return cfg;
 }
 
@@ -307,16 +307,17 @@ static void output_past_the_pico_cap_is_reported_dropped_and_the_session_continu
 {
     Board b; board_open(&b);
     UBufferTransport *bt = session_open(&b);
-    /* A 3,000-character string literal, echoed six times in one eval.
-     * echo's own per-line frame caps each write at roughly 1 KB before it
-     * ever reaches the session's output buffer (lobby_send's local
-     * buffer), so two echoes of this string still fit the 4 KB cap; it
-     * takes several of them stacked in one atomic eval to overrun it. */
-    char line[7000];
+    /* A 700-character string literal, echoed eight times in one eval, so
+     * the code stays under the 1 KiB source budget.  echo's own per-line
+     * frame caps each write at roughly 1 KB before it reaches the
+     * session's output buffer (lobby_send's local buffer), so each echo
+     * stages about 720 bytes; eight of them stacked in one atomic eval
+     * overrun the 4 KB cap. */
+    char line[2000];
     size_t at = (size_t)snprintf(line, sizeof line, "{\"id\":1,\"op\":\"eval\",\"code\":\"var s = \\\"");
-    for (int i = 0; i < 3000; i++) line[at++] = 'a';
+    for (int i = 0; i < 700; i++) line[at++] = 'a';
     at += (size_t)snprintf(line + at, sizeof line - at,
-                           "\\\" | echo(s) | echo(s) | echo(s) | echo(s) | echo(s) | echo(s)\"}\n");
+                           "\\\" | echo(s) | echo(s) | echo(s) | echo(s) | echo(s) | echo(s) | echo(s) | echo(s)\"}\n");
     char out[16384];
     eval_line(&b, bt, line, out, sizeof out);
     UASSERT(strstr(out, "\"code\":\"output_dropped\"") != NULL);

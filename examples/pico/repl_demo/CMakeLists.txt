@@ -97,6 +97,10 @@ add_executable(repl_demo
     "${BAKED_HEADER}")
 add_dependencies(repl_demo repl_demo_bake)
 target_include_directories(repl_demo PRIVATE ${REPL_DEMO_INCLUDES})
+# The SDK's newlib init installs a no-access MPU region at __StackBottom
+# (memmap_repl_demo.ld), so a stack overrun faults instead of writing
+# into the heap; main.c routes the fault to its error pattern.
+target_compile_definitions(repl_demo PRIVATE PICO_USE_STACK_GUARDS=1)
 target_link_libraries(repl_demo PRIVATE
     liburbi
     ${REPL_DEMO_SDK_LIBS})

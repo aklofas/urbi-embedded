@@ -55,21 +55,27 @@ extern char __StackLimit;
 #define LED_PIN           25u
 #define IDLE_REPORT_US    (30u * 1000u * 1000u)
 
-/* The compile budget of a session.  One nesting level of the parser
- * costs about 1 KB of stack on this core and the stack is 32 KB, so 24
- * levels leave 8 KB for everything else; an AST node is 56 bytes, so
- * 2,000 nodes is a 112 KB transient at worst, which the source cap of
- * 4 KB makes unreachable in practice. */
-#define BUDGET_DEPTH      24u
-#define BUDGET_NODES      2000u
-#define BUDGET_SOURCE     4096u
+/* The compile budget of a session, sized to the 64 KB stack.  Measured
+ * through the eval service with this configuration: `1+1` alone touches
+ * 16,880 B of stack, and the worst static path per expression-nesting
+ * level on this core is 2,976 B, so 12 levels stay under 64 KB with
+ * about 11 KB spare.  Statement and brace nesting are not counted by the
+ * parser's depth budget (the emitter refuses past 32 nested blocks, but
+ * only after parsing); the 1 KiB source cap bounds them for ordinary
+ * lines, and the MPU stack guard catches the rest (see isr_hardfault).
+ * An AST node is 56 bytes, so 1,000 nodes is a 56 KB transient at
+ * worst, which the source cap makes unreachable in practice. */
+#define BUDGET_DEPTH      12u
+#define BUDGET_NODES      1000u
+#define BUDGET_SOURCE     1024u
 
 /* Every block carries its requested size in a header, since a
- * realloc-shaped allocator is not told the old size.  The header is
- * 16 bytes on this core (a size_t padded to the double's alignment);
- * s_alloc_live counts requested bytes only, the same figure the 32-bit
- * probe counts and caps. */
-typedef struct { size_t n; double align; } AllocHdr;
+ * realloc-shaped allocator is not told the old size.  The header is a
+ * union so it costs 8 bytes on this core while still keeping the block
+ * 8-byte aligned for a double.  s_alloc_live counts requested bytes
+ * only, the same figure the 32-bit probe counts and caps (the probe's
+ * own header is larger; the count is the same). */
+typedef union { size_t n; double align; } AllocHdr;
 static size_t s_alloc_live;
 
 static void *port_alloc(void *ptr, size_t n, void *ud)
@@ -216,9 +222,16 @@ __attribute__((noreturn)) static void error_loop(void)
     }
 }
 
+/* The SDK's hard-fault vector.  A stack overrun hits the MPU guard below
+ * the stack, faults, and lands here: the board shows the three-pulse
+ * error pattern instead of corrupting the heap, and needs a reset. */
+void isr_hardfault(void);
+void isr_hardfault(void) { error_loop(); }
+
 static void report_last_error(UVM *vm)
 {
     UErrorInfo info;
+    memset(&info, 0, sizeof info);
     (void)urbi_last_error(vm, &info);
     const char *m = info.message ? info.message : "(no message)";
     console_begin();
@@ -362,9 +375,13 @@ int main(void)
         }
 
         /* Nothing runnable: sleep until the next interrupt (the tick is
-         * never more than 100 ms away, so a timer resolves within that). */
-        if (st == URBI_STEP_QUIESCENT ||
-            (st == URBI_STEP_IDLE_UNTIL && wake_us > now + 100000u)) {
+         * never more than 100 ms away, so a timer resolves within that).
+         * Not while UART0 output is part-way out: the TX FIFO holds 32
+         * bytes and raises no interrupt, so the loop keeps sweeping until
+         * the service's remainder has gone. */
+        if (!transport_uart_output_pending() &&
+            (st == URBI_STEP_QUIESCENT ||
+             (st == URBI_STEP_IDLE_UNTIL && wake_us > now + 100000u))) {
             __wfi();
         }
     }

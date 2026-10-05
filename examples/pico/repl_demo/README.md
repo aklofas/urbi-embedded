@@ -119,16 +119,19 @@ Run these in picocom on `/dev/ttyACM0`, in order.
 
 ## Memory layout
 
-[`memmap_repl_demo.ld`](memmap_repl_demo.ld) puts a 32 KB stack at the top of SRAM, from `__StackLimit` (0x20038000) to `__StackTop` (0x20040000).
+[`memmap_repl_demo.ld`](memmap_repl_demo.ld) puts a 64 KB stack at the top of SRAM, from `__StackLimit` (0x20030000) to `__StackTop` (0x20040000).
+The SDK places a no-access MPU region at the bottom of the stack, so an overrun faults instead of writing into the heap; the fault shows the three-pulse error pattern on the LED, and the board needs a reset.
 newlib's heap runs from `end`, just past the statics, up to `__StackLimit`, and the VM allocates from it through `realloc`.
-Each block the VM allocates carries a 16-byte header holding its requested size, which is how `alloc live` is counted; on this core that is a 4-byte size padded to the 8-byte alignment of a `double`.
+Each block the VM allocates carries an 8-byte header holding its requested size, which is how `alloc live` is counted; the header is a union of the size and a `double`, so the block stays 8-byte aligned.
 
 The collector's budget is that heap less a 16 KB session reserve.
 The reserve covers what the eval service and newlib allocate outside the VM's allocator: each session's 4 KB output staging, its input line, and the service's own structures.
 
-Every session compiles under a budget of 24 parser levels, 2,000 AST nodes and 4 KB of source.
-One parser level costs about 1 KB of stack on this core, so 24 levels leave 8 KB of the 32 KB stack for everything else.
-An AST node is 56 bytes, so 2,000 nodes is a 112 KB transient at worst, which the 4 KB source cap makes unreachable in practice.
+Every session compiles under a budget of 12 expression-nesting levels, 1,000 AST nodes and 1 KiB of source.
+Measured through the eval service with this configuration, `1+1` alone touches 16,880 B of stack.
+The worst static path per expression-nesting level on this core is 2,976 B, so 12 levels stay under 64 KB with about 11 KB to spare.
+Statement and brace nesting are not counted by that budget; the 1 KiB source cap bounds them for ordinary lines, and the stack guard catches the rest.
+An AST node is 56 bytes, so 1,000 nodes is a 56 KB transient at worst, which the 1 KiB source cap makes unreachable in practice.
 
 ## Measured
 
@@ -138,7 +141,7 @@ An AST node is 56 bytes, so 2,000 nodes is a 112 KB transient at worst, which th
 | After the first session close, host 64-bit build | 71,420 B |
 | After the second session close, host 64-bit build | 71,420 B |
 | Hosted Cortex-M0+ `liburbi.a`, text+data+bss | 146,823 B |
-| Firmware `repl_demo.elf`, text / data / bss | 280,136 / 0 / 4,428 B |
+| Firmware `repl_demo.elf`, text / data / bss | 280,232 / 0 / 4,428 B |
 | Firmware `repl_demo.uf2` | 552,448 B |
 | Boot heap (board) | from the board log |
 | Session open (board) | from the board log |
@@ -150,6 +153,7 @@ The firmware's initialized data is counted under text by `arm-none-eabi-size`, b
 
 - The service refuses a request line only past its 1 MiB framing cap, which is not configurable, so a single line that long exhausts the heap first; connect only over trusted serial links.
 - TinyUSB exposes one CDC interface, so there is one USB session at a time.
+- A request's code is limited to 1 KiB and 12 levels of expression nesting. Deeply nested statements or braces within that 1 KiB can still overrun the stack; the board then faults to the error pattern and needs a reset.
 - UART input is noticed as it arrives: the receive interrupt moves it into a 256-byte ring and wakes the main loop. Bytes that arrive with the ring full are dropped.
 - Floats are `double`, computed through libgcc's soft-float routines on this core.
 
@@ -159,7 +163,7 @@ The firmware's initialized data is counted under text by `arm-none-eabi-size`, b
 examples/pico/repl_demo/
 ├── CMakeLists.txt            # the build: pico-sdk, the bake step, the link
 ├── bake.cmake                # compiles repl_demo.u to repl_demo_baked.h
-├── memmap_repl_demo.ld       # linker script: 32 KB stack at the top of SRAM
+├── memmap_repl_demo.ld       # linker script: 64 KB stack at the top of SRAM
 ├── pico_sdk_import.cmake     # copied from pico-sdk/external/
 ├── repl_demo.u               # the boot workload
 ├── README.md                 # this file

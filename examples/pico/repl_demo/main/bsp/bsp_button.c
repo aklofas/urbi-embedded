@@ -8,7 +8,7 @@
  * disable interrupts around the sample.
  *
  * Sampling cadence: bsp_button_poll_isr is called from TIMER_IRQ_0
- * at 100 Hz (every 100 ms).  Debounce is "two consecutive same
+ * at 10 Hz (every 100 ms).  Debounce is "two consecutive same
  * samples confirm".  Rising edge (debounced not-held → held) fires
  * the `pressed` event via urbi_inject_event.
  *
