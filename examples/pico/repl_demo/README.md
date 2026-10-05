@@ -137,7 +137,7 @@ An AST node is 56 bytes, so 2,000 nodes is a 112 KB transient at worst, which th
 | Session boot, host 64-bit build | 71,273 B |
 | After the first session close, host 64-bit build | 71,420 B |
 | After the second session close, host 64-bit build | 71,420 B |
-| Hosted Cortex-M0+ `liburbi.a`, text+data+bss | 146,760 B |
+| Hosted Cortex-M0+ `liburbi.a`, text+data+bss | 146,823 B |
 | Firmware `repl_demo.elf`, text / data / bss | 280,136 / 0 / 4,428 B |
 | Firmware `repl_demo.uf2` | 552,448 B |
 | Boot heap (board) | from the board log |

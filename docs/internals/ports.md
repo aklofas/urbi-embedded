@@ -95,7 +95,7 @@ a claim about today; the Pico entry describes what builds now.
   once the owner runs it.
 - **Toolchain and SDK:** xpack `arm-none-eabi-gcc` 14.2.1, pico-sdk
   2.2.0 (TinyUSB 0.18), the `arm-cortex-m0plus` preset in its hosted
-  shape (`make cross-arm-cortex-m0plus-hosted`, 146,760 B
+  shape (`make cross-arm-cortex-m0plus-hosted`, 146,823 B
   text+data+bss at this tag). Soft-float through libgcc; floats are
   always `double`.
 - **Shape of the example:** CMake imports the archive; `bake.cmake`
