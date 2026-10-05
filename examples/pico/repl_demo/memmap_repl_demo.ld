@@ -18,3 +18,9 @@ __StackTop    = ORIGIN(RAM) + LENGTH(RAM);
 __StackBottom = __StackTop - 0x8000;
 __StackLimit  = __StackBottom;
 __HeapLimit   = __StackLimit;
+
+/* The SDK only checks __StackLimit >= __HeapLimit, which the lines above
+ * make true by construction; this checks that the statics and the
+ * minimum heap the SDK reserves in .heap end below the stack. */
+ASSERT(ADDR(.heap) + SIZEOF(.heap) <= __StackLimit,
+       "statics and the minimum heap overlap the 32 KB stack")

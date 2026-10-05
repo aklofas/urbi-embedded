@@ -61,7 +61,6 @@ set(REPL_DEMO_INCLUDES
     "${CMAKE_CURRENT_SOURCE_DIR}/main/bsp"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${URBI_ROOT}/include")
-set(REPL_DEMO_WARNINGS -Wall -Wextra -Werror)
 set(REPL_DEMO_SDK_LIBS
     pico_stdlib
     tinyusb_device
@@ -74,36 +73,31 @@ set(REPL_DEMO_SDK_LIBS
     hardware_gpio
     hardware_uart)
 
-# --- the two eval-service transports -----------------------------------
-add_library(repl_demo_transports OBJECT
+# --- the firmware -------------------------------------------------------
+# One executable holds every file.  The SDK's libraries are INTERFACE
+# libraries that carry their sources, so any second target linking them
+# would compile the SDK again and the link would see each SDK object
+# twice; they are therefore linked once, here.  The warning flags go on
+# the example's own files only, so the SDK's sources are not built with
+# -Werror.
+set(REPL_DEMO_SOURCES
+    main/main.c
+    main/usb_descriptors.c
     main/transport_usb_cdc.c
-    main/transport_uart.c)
-target_include_directories(repl_demo_transports PRIVATE ${REPL_DEMO_INCLUDES})
-target_compile_options(repl_demo_transports PRIVATE ${REPL_DEMO_WARNINGS})
-target_link_libraries(repl_demo_transports PRIVATE ${REPL_DEMO_SDK_LIBS})
-
-# --- the board fixtures -------------------------------------------------
-add_library(repl_demo_bsp OBJECT
+    main/transport_uart.c
     main/bsp/bsp_register.c
     main/bsp/bsp_led.c
     main/bsp/bsp_temp.c
     main/bsp/bsp_button.c
     main/bsp/bsp_tick.c)
-target_include_directories(repl_demo_bsp PRIVATE ${REPL_DEMO_INCLUDES})
-target_compile_options(repl_demo_bsp PRIVATE ${REPL_DEMO_WARNINGS})
-target_link_libraries(repl_demo_bsp PRIVATE ${REPL_DEMO_SDK_LIBS})
-
-# --- the firmware -------------------------------------------------------
+set_source_files_properties(${REPL_DEMO_SOURCES}
+    PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 add_executable(repl_demo
-    main/main.c
-    main/usb_descriptors.c
+    ${REPL_DEMO_SOURCES}
     "${BAKED_HEADER}")
 add_dependencies(repl_demo repl_demo_bake)
 target_include_directories(repl_demo PRIVATE ${REPL_DEMO_INCLUDES})
-target_compile_options(repl_demo PRIVATE ${REPL_DEMO_WARNINGS})
 target_link_libraries(repl_demo PRIVATE
-    repl_demo_transports
-    repl_demo_bsp
     liburbi
     ${REPL_DEMO_SDK_LIBS})
 
