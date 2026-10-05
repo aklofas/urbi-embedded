@@ -22,4 +22,10 @@ void transport_usb_cdc_vtable(UTransport *out);
 void transport_usb_cdc_set_open(bool open);
 bool transport_usb_cdc_is_open(void);
 
+/* True while the service's output is part-way through the stream: its
+ * last write took fewer bytes than offered.  False again once a later
+ * write takes its full offer, or the session closes.  The console uses
+ * it to keep its own lines from landing inside one of the service's. */
+bool transport_usb_cdc_output_pending(void);
+
 #endif

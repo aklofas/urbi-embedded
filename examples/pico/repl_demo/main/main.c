@@ -12,10 +12,11 @@
  * Loop: pump TinyUSB, sweep the service, step the VM for one budget,
  * sweep again, then wait for an interrupt when nothing is runnable.
  *
- * Console: every line printed here goes to UART0 and, when a host is
- * attached, to USB CDC as well, interleaved with the session's JSON
- * lines.  A machine client on CDC ignores lines that do not start with
- * `{`; a person in picocom reads both.
+ * Console: every line printed here goes to UART0 as plain text, where it
+ * interleaves with the UART session's JSON; that is the human and debug
+ * channel.  On USB CDC it goes out as plain text before a session exists
+ * and as an NDJSON output envelope after, so every line a machine client
+ * reads there is JSON (see console_begin).
  *
  * The wake hook (urbi_set_wake) is not installed: this loop polls at
  * least every 100 ms because of the tick, and USB and UART traffic
@@ -63,26 +64,127 @@ extern char __StackLimit;
 #define BUDGET_NODES      2000u
 #define BUDGET_SOURCE     4096u
 
+/* Every block carries its requested size in a header, since a
+ * realloc-shaped allocator is not told the old size.  The header is
+ * 16 bytes on this core (a size_t padded to the double's alignment);
+ * s_alloc_live counts requested bytes only, the same figure the 32-bit
+ * probe counts and caps. */
+typedef struct { size_t n; double align; } AllocHdr;
+static size_t s_alloc_live;
+
 static void *port_alloc(void *ptr, size_t n, void *ud)
 {
     (void)ud;
-    if (n == 0U) { free(ptr); return NULL; }
-    return realloc(ptr, n);
+    AllocHdr *h = ptr ? ((AllocHdr *)ptr - 1) : NULL;
+    if (n == 0U) {
+        if (h) { s_alloc_live -= h->n; free(h); }
+        return NULL;
+    }
+    size_t old = h ? h->n : 0U;
+    AllocHdr *nh = (AllocHdr *)realloc(h, sizeof(AllocHdr) + n);
+    if (nh == NULL) return NULL;
+    nh->n = n;
+    s_alloc_live = s_alloc_live - old + n;
+    return nh + 1;
 }
 
 static uint64_t clock_us(void *ud) { (void)ud; return time_us_64(); }
 
 /* --- console ------------------------------------------------------------ */
 
-static void console_write(const char *s, size_t n)
+/* One escaped byte of a JSON string into `out` (room for 6); returns how
+ * many characters it wrote.  Plain C so it can be checked on its own. */
+static size_t json_escape_byte(unsigned char c, char out[6])
+{
+    static const char hex[] = "0123456789abcdef";
+    switch (c) {
+    case '"':  out[0] = '\\'; out[1] = '"';  return 2;
+    case '\\': out[0] = '\\'; out[1] = '\\'; return 2;
+    case '\n': out[0] = '\\'; out[1] = 'n';  return 2;
+    case '\r': out[0] = '\\'; out[1] = 'r';  return 2;
+    case '\t': out[0] = '\\'; out[1] = 't';  return 2;
+    default:
+        if (c < 0x20U || c == 0x7fU) {
+            out[0] = '\\'; out[1] = 'u'; out[2] = '0'; out[3] = '0';
+            out[4] = hex[c >> 4]; out[5] = hex[c & 0xfU];
+            return 6;
+        }
+        out[0] = (char)c;
+        return 1;
+    }
+}
+
+/* Writes all of `p` to USB CDC as the FIFO drains, pumping TinyUSB; what
+ * is left when the deadline passes is dropped. */
+static void cdc_write_all(const char *p, size_t n, absolute_time_t deadline)
+{
+    while (n > 0U) {
+        uint32_t room = tud_cdc_write_available();
+        if (room > 0U) {
+            uint32_t w = tud_cdc_write(p, (uint32_t)(n < room ? n : room));
+            (void)tud_cdc_write_flush();
+            p += w;
+            n -= w;
+        }
+        if (n == 0U) break;
+        tud_task();
+        if (time_reached(deadline)) break;
+    }
+}
+
+/* A console line is written as begin, any number of parts, end.
+ *
+ * UART0 gets the plain text: it is the human and debug channel, where
+ * these lines and the UART session's JSON interleave.
+ *
+ * USB CDC gets the plain text only before a session is registered on it
+ * (the boot banner).  Once a session exists, every line on USB CDC is
+ * NDJSON: the console line goes out as one output envelope on the
+ * "console" channel, and only when the session has no half-written line
+ * of its own in the FIFO.  If it does, the CDC copy is skipped, not
+ * queued; the line still reaches UART0. */
+enum { CON_UART_ONLY, CON_CDC_RAW, CON_CDC_ENVELOPE };
+static int s_con_mode;
+static absolute_time_t s_con_deadline;
+
+static void console_begin(void)
+{
+    s_con_mode = CON_UART_ONLY;
+    if (!tud_cdc_connected()) return;
+    s_con_deadline = make_timeout_time_ms(100);
+    if (!transport_usb_cdc_is_open()) { s_con_mode = CON_CDC_RAW; return; }
+    if (transport_usb_cdc_output_pending()) return;
+    s_con_mode = CON_CDC_ENVELOPE;
+    static const char head[] = "{\"kind\":\"output\",\"channel\":\"console\",\"msg\":\"";
+    cdc_write_all(head, sizeof head - 1U, s_con_deadline);
+}
+
+static void console_part(const char *s, size_t n)
 {
     uart_write_blocking(uart0, (const uint8_t *)s, n);
-    if (tud_cdc_connected()) {
-        (void)tud_cdc_write(s, (uint32_t)n);
-        (void)tud_cdc_write_flush();
-        absolute_time_t deadline = make_timeout_time_ms(30);
-        while (!time_reached(deadline)) tud_task();
+    if (s_con_mode == CON_CDC_RAW) {
+        cdc_write_all(s, n, s_con_deadline);
+    } else if (s_con_mode == CON_CDC_ENVELOPE) {
+        char buf[64];
+        size_t used = 0U;
+        for (size_t i = 0U; i < n; i++) {
+            if (used > sizeof buf - 6U) { cdc_write_all(buf, used, s_con_deadline); used = 0U; }
+            used += json_escape_byte((unsigned char)s[i], &buf[used]);
+        }
+        if (used > 0U) cdc_write_all(buf, used, s_con_deadline);
     }
+}
+
+static void console_end(void)
+{
+    if (s_con_mode == CON_CDC_ENVELOPE) cdc_write_all("\"}\n", 3U, s_con_deadline);
+}
+
+static void console_write(const char *s, size_t n)
+{
+    console_begin();
+    console_part(s, n);
+    console_end();
 }
 static void console_puts(const char *s) { console_write(s, strlen(s)); }
 
@@ -97,9 +199,11 @@ static void vm_diag(UVM *vm, void *ud, int level, const char *msg, size_t len)
     (void)vm; (void)ud;
     char head[24];
     int n = snprintf(head, sizeof head, "[diag %d] ", level);
-    console_write(head, (size_t)n);
-    console_write(msg, len);
-    console_puts("\r\n");
+    console_begin();
+    console_part(head, (size_t)n);
+    console_part(msg, len);
+    console_part("\r\n", 2U);
+    console_end();
 }
 
 /* Three long pulses, a pause, repeat: an init step failed, as opposed to
@@ -116,15 +220,20 @@ static void report_last_error(UVM *vm)
 {
     UErrorInfo info;
     (void)urbi_last_error(vm, &info);
-    console_puts("  ");
-    console_puts(info.message ? info.message : "(no message)");
-    console_puts("\r\n");
+    const char *m = info.message ? info.message : "(no message)";
+    console_begin();
+    console_part("  ", 2U);
+    console_part(m, strlen(m));
+    console_part("\r\n", 2U);
+    console_end();
 }
 
-/* The number the definition of done reads: collector-live bytes after a
- * full collection, beside newlib's heap break (its high-water mark, the
- * figure comparable to the qemu probe's allocator count), the budget and
- * the cycle count. */
+/* One heap line, after a full collection.  `alloc live` is the figure the
+ * 32-bit probe caps: requested bytes outstanding through port_alloc.
+ * `gc live` is the collector's view of what it holds.  `heap break` is
+ * newlib's high-water mark, including its own chunk headers and the
+ * allocator's.  Then the budget the collector paces against and the
+ * cycle count. */
 static void report_heap(UVM *vm, const char *label)
 {
     urbi_gc_collect(vm);
@@ -132,11 +241,11 @@ static void report_heap(UVM *vm, const char *label)
     memset(&st, 0, sizeof st);
     (void)urbi_gc_stats(vm, &st);
     size_t brk = (size_t)((char *)sbrk(0) - &end);
-    char line[160];
+    char line[192];
     int n = snprintf(line, sizeof line,
-                     "%s: live %lu B, heap break %lu B, budget %lu B, cycles %lu\r\n",
-                     label, (unsigned long)st.bytes_live, (unsigned long)brk,
-                     (unsigned long)st.heap_budget, (unsigned long)st.cycles);
+                     "%s: alloc live %lu B, gc live %lu B, heap break %lu B, budget %lu B, cycles %lu\r\n",
+                     label, (unsigned long)s_alloc_live, (unsigned long)st.bytes_live,
+                     (unsigned long)brk, (unsigned long)st.heap_budget, (unsigned long)st.cycles);
     console_write(line, (size_t)n);
 }
 
