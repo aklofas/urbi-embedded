@@ -350,6 +350,26 @@ test-freestanding: $(foreach p,$(PRESETS),cross-$(p)-bytecode-only)
 test-cross-missing-toolchain:
 	@sh tests/scripts/test-cross-missing-toolchain.sh
 
+# --- the Raspberry Pi Pico demo -------------------------------------------
+#
+# Builds the host urbi (it bakes the workload), the hosted Cortex-M0+
+# archive, then the firmware through pico-sdk's CMake.  pico-sdk is taken
+# from PICO_SDK_PATH, defaulting to the workspace-root tools/pico-sdk one
+# directory above this repository; a missing SDK is an error, not a skip.
+# Not in releasetest (it needs the SDK); CI runs it in its own job.
+PICO_SDK_PATH ?= $(abspath ../tools/pico-sdk)
+PICO_DEMO_DIR := examples/pico/repl_demo
+.PHONY: pico-repl-demo
+pico-repl-demo: $(BUILDDIR)/urbi cross-arm-cortex-m0plus-hosted
+	@test -f "$(PICO_SDK_PATH)/pico_sdk_init.cmake" || \
+	    { echo "pico-repl-demo: no pico-sdk at $(PICO_SDK_PATH) (set PICO_SDK_PATH)"; exit 1; }
+	cmake -S $(PICO_DEMO_DIR) -B $(PICO_DEMO_DIR)/build \
+	    -DPICO_SDK_PATH=$(PICO_SDK_PATH) \
+	    -DURBI_HOST_BIN=$(abspath $(BUILDDIR)/urbi) \
+	    -DLIBURBI_ARCHIVE=$(abspath build/arm-cortex-m0plus-hosted/liburbi.a)
+	cmake --build $(PICO_DEMO_DIR)/build --parallel
+	arm-none-eabi-size $(PICO_DEMO_DIR)/build/repl_demo.elf
+
 # refactor-3 BLD-04: flag-stamp rules (variables defined above, before the
 # first prerequisite-list use).
 .PHONY: force-flagstamp
@@ -1055,4 +1075,4 @@ check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
 .PHONY: test-unit test-probes test-bench test-embedding-guide
-.PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 force-flagstamp
+.PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 force-flagstamp pico-repl-demo
