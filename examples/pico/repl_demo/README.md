@@ -116,11 +116,20 @@ Run these in picocom on `/dev/ttyACM0`, in order.
 5. **Session reopen.** Note the `alloc live` figure on the `session open:` line, leave picocom with C-a C-x, and start it again.
    The new `session open:` line's `alloc live` is within 1,024 B of the first.
 6. **Idle.** Leave the board alone for a minute: two consecutive `idle:` lines, 30 s apart, show the same `alloc live`.
+7. **Optional: the compile budget.** Send this line of 13 nested function literals:
+
+   ```json
+   {"id":8,"op":"eval","code":"function(){function(){function(){function(){function(){function(){function(){function(){function(){function(){function(){function(){function(){1}}}}}}}}}}}}}"}
+   ```
+
+   It answers an `error` line with `"code":"budget_depth"`, then `done`, and the session keeps working.
+   Only if you want to see the fault path: send an eval whose code is about 1,000 `{` characters.
+   The board stops answering, the LED shows the three-pulse error pattern, and the board needs a reset.
 
 ## Memory layout
 
 [`memmap_repl_demo.ld`](memmap_repl_demo.ld) puts a 64 KB stack at the top of SRAM, from `__StackLimit` (0x20030000) to `__StackTop` (0x20040000).
-The SDK places a no-access MPU region at the bottom of the stack, so an overrun faults instead of writing into the heap; the fault shows the three-pulse error pattern on the LED, and the board needs a reset.
+A 32-byte guard at the stack bottom turns most overruns into a hard fault and the three-pulse LED error pattern, and the board needs a reset. A frame larger than 32 B can step over the guard, so a deep enough line can still reach the heap until the parser counts statement nesting.
 newlib's heap runs from `end`, just past the statics, up to `__StackLimit`, and the VM allocates from it through `realloc`.
 Each block the VM allocates carries an 8-byte header holding its requested size, which is how `alloc live` is counted; the header is a union of the size and a `double`, so the block stays 8-byte aligned.
 
@@ -129,8 +138,8 @@ The reserve covers what the eval service and newlib allocate outside the VM's al
 
 Every session compiles under a budget of 12 expression-nesting levels, 1,000 AST nodes and 1 KiB of source.
 Measured through the eval service with this configuration, `1+1` alone touches 16,880 B of stack.
-The worst static path per expression-nesting level on this core is 2,976 B, so 12 levels stay under 64 KB with about 11 KB to spare.
-Statement and brace nesting are not counted by that budget; the 1 KiB source cap bounds them for ordinary lines, and the stack guard catches the rest.
+The worst static path per expression-nesting level on this core is 2,976 B, so 12 levels take 52,592 B and leave about 12.9 KB of the 64 KB.
+Statement and brace nesting are not counted by that budget; the 1 KiB source cap bounds them for ordinary lines.
 An AST node is 56 bytes, so 1,000 nodes is a 56 KB transient at worst, which the 1 KiB source cap makes unreachable in practice.
 
 ## Measured
@@ -141,8 +150,8 @@ An AST node is 56 bytes, so 1,000 nodes is a 56 KB transient at worst, which the
 | After the first session close, host 64-bit build | 71,420 B |
 | After the second session close, host 64-bit build | 71,420 B |
 | Hosted Cortex-M0+ `liburbi.a`, text+data+bss | 146,823 B |
-| Firmware `repl_demo.elf`, text / data / bss | 280,232 / 0 / 4,428 B |
-| Firmware `repl_demo.uf2` | 552,448 B |
+| Firmware `repl_demo.elf`, text / data / bss | 280,384 / 0 / 4,428 B |
+| Firmware `repl_demo.uf2` | 552,960 B |
 | Boot heap (board) | from the board log |
 | Session open (board) | from the board log |
 | Idle growth (board) | from the board log |
@@ -153,7 +162,7 @@ The firmware's initialized data is counted under text by `arm-none-eabi-size`, b
 
 - The service refuses a request line only past its 1 MiB framing cap, which is not configurable, so a single line that long exhausts the heap first; connect only over trusted serial links.
 - TinyUSB exposes one CDC interface, so there is one USB session at a time.
-- A request's code is limited to 1 KiB and 12 levels of expression nesting. Deeply nested statements or braces within that 1 KiB can still overrun the stack; the board then faults to the error pattern and needs a reset.
+- A request's code is limited to 1 KiB and 12 levels of expression nesting. Deeply nested statements or braces within that 1 KiB are not counted and can still overrun the stack. A 32-byte guard at the stack bottom turns most overruns into a hard fault and the three-pulse LED error pattern, and the board needs a reset. A frame larger than 32 B can step over the guard, so a deep enough line can still reach the heap until the parser counts statement nesting.
 - UART input is noticed as it arrives: the receive interrupt moves it into a 256-byte ring and wakes the main loop. Bytes that arrive with the ring full are dropped.
 - Floats are `double`, computed through libgcc's soft-float routines on this core.
 

@@ -7,11 +7,13 @@
  * with this firmware's configuration: `1+1` alone touches 16,880 B of
  * stack, and the worst static path per expression-nesting level on
  * Cortex-M0+ is 2,976 B, so the 12 levels the session's compile budget
- * allows stay under 64 KB.  Statement and brace nesting are not counted
- * by that budget; the session's 1 KiB source cap bounds them for
- * ordinary lines, and the MPU guard the SDK installs at __StackBottom
- * (PICO_USE_STACK_GUARDS, CMakeLists.txt) faults on the rest instead of
- * letting the stack walk into the heap.
+ * allows take 52,592 B and leave about 12.9 KB.  Statement and brace
+ * nesting are not counted by that budget; the session's 1 KiB source cap
+ * bounds them for ordinary lines.  The SDK installs a 32-byte no-access
+ * guard at __StackBottom (PICO_USE_STACK_GUARDS, CMakeLists.txt), which
+ * turns most overruns into a hard fault and the LED error pattern; a
+ * frame larger than 32 B can step over it, so a deep enough line can
+ * still reach the heap until the parser counts statement nesting.
  *
  * The stack sits above the heap and newlib's _sbrk stops at
  * __StackLimit, so the two cannot meet by allocation either.

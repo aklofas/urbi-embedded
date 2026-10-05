@@ -14,7 +14,7 @@
 - **Board:** Raspberry Pi Pico (RP2040, dual Cortex-M0+, no FPU, no divide unit).
 - **Toolchain:** xpack-arm-none-eabi-gcc 14.2.1.
 - **SDK:** pico-sdk 2.2.0.
-- **Firmware artifact:** `examples/pico/repl_demo/build/repl_demo.uf2` (552,448 B).
+- **Firmware artifact:** `examples/pico/repl_demo/build/repl_demo.uf2` (552,960 B).
 - **Smoke steps:**
   1. Boot heap: the `boot heap:` line shows `alloc live` under 49,152 B.
   2. Three evals: `echo("hi")` prints and returns `nil`; `1+1` returns `2`; `temp_celsius()` returns a float.

@@ -81,8 +81,8 @@ format unchanged at v2.0 / `0x20`.
 
 | Number | Value |
 |---|---|
-| firmware `repl_demo.elf` (text / data / bss) | 280,232 / 0 / 4,428 bytes (284,660 total) |
-| firmware `repl_demo.uf2` | 552,448 bytes |
+| firmware `repl_demo.elf` (text / data / bss) | 280,384 / 0 / 4,428 bytes (284,812 total) |
+| firmware `repl_demo.uf2` | 552,960 bytes |
 | hosted Cortex-M0+ archive, `build/arm-cortex-m0plus-hosted/liburbi.a` | 146,823 bytes text+data+bss |
 | host session cost (64-bit) | boot 71,273 bytes; after the first session's close, 71,420; after the second, 71,420 (a reopen costs nothing further) |
 | 32-bit boot heap (qemu probe) | 48,980 bytes live in 994 blocks, unchanged by this tag; cap 49,152 |

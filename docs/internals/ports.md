@@ -121,7 +121,10 @@ a claim about today; the Pico entry describes what builds now.
   (`UREPL_MAX_LINE` in `src/repl/urepl_ndjson.h`, not exposed through
   `UReplConfig`); the parser's depth budget counts expression nesting
   only, so deep statement or brace nesting inside the 1 KiB source cap
-  can still reach the stack guard, which faults to the error pattern.
+  can still overrun the stack.  The 32-byte guard at the stack bottom
+  turns most overruns into a hard fault and the LED error pattern; a
+  frame larger than 32 B can step over it, so a deep enough line can
+  still reach the heap until the parser counts statement nesting.
   UART0 input arrives through an RX-interrupt ring, and the main loop
   does not sleep while UART0 output is part-way out.
 - **Pico SDK pin:** `2.2.0` at commit

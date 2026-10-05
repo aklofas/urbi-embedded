@@ -58,11 +58,15 @@ extern char __StackLimit;
 /* The compile budget of a session, sized to the 64 KB stack.  Measured
  * through the eval service with this configuration: `1+1` alone touches
  * 16,880 B of stack, and the worst static path per expression-nesting
- * level on this core is 2,976 B, so 12 levels stay under 64 KB with
- * about 11 KB spare.  Statement and brace nesting are not counted by the
- * parser's depth budget (the emitter refuses past 32 nested blocks, but
- * only after parsing); the 1 KiB source cap bounds them for ordinary
- * lines, and the MPU stack guard catches the rest (see isr_hardfault).
+ * level on this core is 2,976 B, so 12 levels take 52,592 B and leave
+ * about 12.9 KB of the 64 KB.  Statement and brace nesting are not
+ * counted by the parser's depth budget (the emitter refuses past 32
+ * nested blocks, but only after parsing); the 1 KiB source cap bounds
+ * them for ordinary lines.  A 32-byte guard at the stack bottom turns
+ * most overruns into a hard fault and the LED error pattern (see
+ * isr_hardfault); a frame larger than 32 B can step over it, so a deep
+ * enough line can still reach the heap until the parser counts
+ * statement nesting.
  * An AST node is 56 bytes, so 1,000 nodes is a 56 KB transient at
  * worst, which the source cap makes unreachable in practice. */
 #define BUDGET_DEPTH      12u
@@ -213,18 +217,21 @@ static void vm_diag(UVM *vm, void *ud, int level, const char *msg, size_t len)
 }
 
 /* Three long pulses, a pause, repeat: an init step failed, as opposed to
- * a hang (no LED activity at all). */
+ * a hang (no LED activity at all).  It busy-waits because the loop also
+ * runs from the hard-fault handler, where no interrupt is delivered. */
 __attribute__((noreturn)) static void error_loop(void)
 {
     for (;;) {
-        for (int i = 0; i < 3; i++) { gpio_put(LED_PIN, 1); sleep_ms(1500); gpio_put(LED_PIN, 0); sleep_ms(500); }
-        sleep_ms(2000);
+        for (int i = 0; i < 3; i++) { gpio_put(LED_PIN, 1); busy_wait_ms(1500); gpio_put(LED_PIN, 0); busy_wait_ms(500); }
+        busy_wait_ms(2000);
     }
 }
 
-/* The SDK's hard-fault vector.  A stack overrun hits the MPU guard below
- * the stack, faults, and lands here: the board shows the three-pulse
- * error pattern instead of corrupting the heap, and needs a reset. */
+/* The SDK's hard-fault vector.  A 32-byte guard at the stack bottom turns
+ * most stack overruns into a hard fault that lands here: the board shows
+ * the three-pulse error pattern and needs a reset.  A frame larger than
+ * 32 B can step over the guard, so a deep enough line can still reach
+ * the heap until the parser counts statement nesting. */
 void isr_hardfault(void);
 void isr_hardfault(void) { error_loop(); }
 
