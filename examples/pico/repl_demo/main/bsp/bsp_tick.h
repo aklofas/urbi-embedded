@@ -9,12 +9,10 @@
  *   3. Fires the `tick` named event via urbi_inject_event.
  *
  * Two entry points:
- *   bsp_tick_register(vm)  — register the `tick` event (call from
+ *   bsp_tick_register(vm)  — bind the `tick` event (call from
  *                            bsp_register, before bsp_tick_start).
  *   bsp_tick_start(vm)     — arm hardware alarm 0; cannot fail today
- *                            so its return value is always 0.
- *
- * On host builds (no PICO_BOARD), both are no-op stubs. */
+ *                            so its return value is always 0. */
 
 #ifndef URBI_PICO_BSP_TICK_H
 #define URBI_PICO_BSP_TICK_H

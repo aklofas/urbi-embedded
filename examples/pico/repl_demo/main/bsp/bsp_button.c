@@ -12,49 +12,26 @@
  * samples confirm".  Rising edge (debounced not-held → held) fires
  * the `pressed` event via urbi_inject_event.
  *
- * urbi_inject_event is ISR-safe (single-producer ring; see
- * include/urbi/urbi.h around line 471).  button_pressed() (the
- * host-fn) is MAIN-thread only and reads the debounced flag — it is
- * not safe to call from ISR. */
+ * urbi_inject_event is ISR-safe (single-producer ring).
+ * button_pressed() (the verb) is MAIN-thread only and reads the
+ * debounced flag — it is not safe to call from ISR. */
 
 #include "bsp_button.h"
+#include "bsp_register.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifdef PICO_BOARD
-#  include "pico/stdlib.h"
-#  include "hardware/structs/ioqspi.h"
-#  include "hardware/structs/sio.h"
-#  include "hardware/sync.h"
-#endif
+#include "pico/stdlib.h"
+#include "hardware/structs/ioqspi.h"
+#include "hardware/structs/sio.h"
+#include "hardware/sync.h"
 
-#ifndef PICO_BOARD
-int bsp_button_register(struct UVM *vm)
-{
-    (void)vm;
-    return 0;
-}
-void bsp_button_poll_isr(struct UVM *vm)
-{
-    (void)vm;
-}
-int bsp_button_inject_synthetic_pressed(struct UVM *vm)
-{
-    (void)vm;
-    return -1;
-}
-urbi_event_id_t bsp_button_get_pressed_evt(void)
-{
-    return URBI_EVENT_ID_INVALID;
-}
-#else /* PICO_BOARD */
-
-/* Event id registered by bsp_button_register; consulted by the
- * ISR-safe poll path.  Sentinel URBI_EVENT_ID_INVALID until set, so
- * an early ISR fire before registration completes is a no-op. */
+/* Event id bound by bsp_button_register; consulted by the ISR-safe
+ * poll path.  Sentinel URBI_EVENT_ID_INVALID until set, so an early
+ * ISR fire before registration completes is a no-op. */
 static urbi_event_id_t s_pressed_evt = URBI_EVENT_ID_INVALID;
 
 /* Debounce state — written by ISR, read by host-fn.  Both fields
@@ -122,57 +99,18 @@ void bsp_button_poll_isr(struct UVM *vm)
     s_last_sample = sample;
 }
 
-static int c_button_pressed(struct UVM *vm, UValue self,
-                            UValue *args, uint8_t nargs, UValue *out)
+static int c_button_pressed(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)vm; (void)self; (void)args; (void)nargs;
-    if (out != NULL) {
-        *out = urbi_make_bool(s_debounced != 0U);
-    }
-    return 0;
-}
-
-int bsp_button_inject_synthetic_pressed(struct UVM *vm)
-{
-    if (vm == NULL || s_pressed_evt == URBI_EVENT_ID_INVALID) {
-        return -1;
-    }
-    return urbi_inject_event(vm, (uint32_t)s_pressed_evt, NULL, 0U);
-}
-
-urbi_event_id_t bsp_button_get_pressed_evt(void)
-{
-    return s_pressed_evt;
+    *out = urbi_make_bool(s_debounced != 0U);
+    return UEXEC_OK;
 }
 
 int bsp_button_register(struct UVM *vm)
 {
-    /* No GPIO init needed — the QSPI_SS pin is owned by the flash
-     * controller, we only borrow it for a few cycles in read_bootsel. */
-
-    int rc = urbi_register(vm, NULL, "button_pressed", c_button_pressed);
-    if (rc != 0) {
-        return rc;
-    }
-
-    /* Register the `pressed` named event AFTER the host-fn so that an
-     * early ISR fire (between bsp_register and bsp_tick_start) finds
-     * s_pressed_evt still INVALID and is silently dropped — not a
-     * dropped wakeup since the tick hasn't started arming yet.
-     *
-     * urbi_event_register rejects NULL realm (unlike urbi_register which
-     * defaults to global); pass the global realm explicitly. */
-    struct URealm *realm = urbi_realm_global(vm);
-    if (realm == NULL) {
-        return -1;
-    }
-    urbi_event_id_t evt = urbi_event_register(vm, realm, "pressed",
-                                              NULL, NULL);
-    if (evt == URBI_EVENT_ID_INVALID) {
-        return -1;
-    }
-    s_pressed_evt = evt;
-    return 0;
+    int rc = urbi_register(vm, "Lobby.button_pressed", c_button_pressed, 0, 0);
+    if (rc != URBI_OK) return rc;
+    /* The event is bound last: an early poll before this returns finds
+     * the id still invalid and does nothing. */
+    return bsp_bind_event(vm, "pressed", &s_pressed_evt);
 }
-
-#endif /* PICO_BOARD */

@@ -16,28 +16,14 @@
 
 #include "bsp_tick.h"
 #include "bsp_button.h"
+#include "bsp_register.h"
 #include "urbi/urbi.h"
 
 #include <stdint.h>
 
-#ifdef PICO_BOARD
-#  include "pico/stdlib.h"
-#  include "hardware/timer.h"
-#  include "hardware/irq.h"
-#endif
-
-#ifndef PICO_BOARD
-int bsp_tick_register(struct UVM *vm)
-{
-    (void)vm;
-    return 0;
-}
-int bsp_tick_start(struct UVM *vm)
-{
-    (void)vm;
-    return 0;
-}
-#else /* PICO_BOARD */
+#include "pico/stdlib.h"
+#include "hardware/timer.h"
+#include "hardware/irq.h"
 
 #define PICO_TICK_PERIOD_US   100000U   /* 100 ms = 10 Hz */
 #define PICO_TICK_ALARM_NUM   0U        /* hardware alarm 0 → TIMER_IRQ_0 */
@@ -76,19 +62,7 @@ static void tick_alarm_isr(void)
 
 int bsp_tick_register(struct UVM *vm)
 {
-    /* urbi_event_register rejects NULL realm (unlike urbi_register which
-     * defaults to global); pass the global realm explicitly. */
-    struct URealm *realm = urbi_realm_global(vm);
-    if (realm == NULL) {
-        return -1;
-    }
-    urbi_event_id_t evt = urbi_event_register(vm, realm, "tick",
-                                              NULL, NULL);
-    if (evt == URBI_EVENT_ID_INVALID) {
-        return -1;
-    }
-    s_tick_evt = evt;
-    return 0;
+    return bsp_bind_event(vm, "tick", &s_tick_evt);
 }
 
 int bsp_tick_start(struct UVM *vm)
@@ -111,5 +85,3 @@ int bsp_tick_start(struct UVM *vm)
         (uint32_t)(now + (uint64_t)PICO_TICK_PERIOD_US);
     return 0;
 }
-
-#endif /* PICO_BOARD */

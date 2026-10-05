@@ -3,13 +3,6 @@
  *
  * GPIO25 on-board LED fixture for the Pi Pico REPL demo.
  *
- * Surface naming: flat (led_on / led_off / led_toggle / led_pwm).  The
- * v0.7.1 embedding API exposes only top-level realm-globals via
- * urbi_register; there is no public sub-object-method installer, so we
- * do not attempt to expose `Lobby.led.on()` style.  Embedders who want
- * an OO wrapper can write an .u overlay that binds led_on/off/etc as
- * methods on a user-defined object.
- *
  * Hardware: GP25 is the on-board LED on Pico (RP2040).  PWM uses PWM
  * slice 4, channel B (the slice that drives GP24/GP25).  Duty is
  * clamped to [0.0, 1.0] and quantized to 16-bit (wrap = 65535). */
@@ -18,22 +11,9 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 
-#ifdef PICO_BOARD
-#  include "pico/stdlib.h"
-#  include "hardware/gpio.h"
-#  include "hardware/pwm.h"
-#endif
-
-#ifndef PICO_BOARD
-/* Host build: empty stub so the demo TU compiles on the host CI
- * without dragging in pico-sdk.  No diagnostic — the example only
- * runs on real silicon. */
-int bsp_led_register(struct UVM *vm)
-{
-    (void)vm;
-    return 0;
-}
-#else /* PICO_BOARD */
+#include "pico/stdlib.h"
+#include "hardware/gpio.h"
+#include "hardware/pwm.h"
 
 #define PICO_LED_PIN        25U
 #define PICO_LED_PWM_WRAP   65535U
@@ -64,85 +44,55 @@ static void led_gpio_mode(void)
     gpio_set_dir(PICO_LED_PIN, GPIO_OUT);
 }
 
-static int c_led_on(struct UVM *vm, UValue self,
-                    UValue *args, uint8_t nargs, UValue *out)
+static int c_led_on(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)vm; (void)self; (void)args; (void)nargs;
     led_gpio_mode();
     gpio_put(PICO_LED_PIN, 1);
-    if (out != NULL) {
-        *out = urbi_make_nil();
-    }
-    return 0;
+    *out = urbi_make_nil();
+    return UEXEC_OK;
 }
 
-static int c_led_off(struct UVM *vm, UValue self,
-                     UValue *args, uint8_t nargs, UValue *out)
+static int c_led_off(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)vm; (void)self; (void)args; (void)nargs;
     led_gpio_mode();
     gpio_put(PICO_LED_PIN, 0);
-    if (out != NULL) {
-        *out = urbi_make_nil();
-    }
-    return 0;
+    *out = urbi_make_nil();
+    return UEXEC_OK;
 }
 
-static int c_led_toggle(struct UVM *vm, UValue self,
-                        UValue *args, uint8_t nargs, UValue *out)
+static int c_led_toggle(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)vm; (void)self; (void)args; (void)nargs;
     led_gpio_mode();
     gpio_xor_mask(1U << PICO_LED_PIN);
-    if (out != NULL) {
-        *out = urbi_make_nil();
-    }
-    return 0;
+    *out = urbi_make_nil();
+    return UEXEC_OK;
 }
 
-static int c_led_pwm(struct UVM *vm, UValue self,
-                     UValue *args, uint8_t nargs, UValue *out)
+static int c_led_pwm(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)vm; (void)self;
-    if (nargs != 1U || args == NULL ||
-        (args[0].kind != (uint8_t)URBI_VALUE_FLOAT &&
-         args[0].kind != (uint8_t)URBI_VALUE_INT)) {
-        if (out != NULL) {
-            *out = urbi_make_nil();
-        }
-        return 1;   /* UEXEC_THROW — caller passed wrong arity/kind */
-    }
-    double duty = (args[0].kind == (uint8_t)URBI_VALUE_INT)
-                  ? (double)urbi_value_as_int(args[0])
-                  : urbi_value_as_float(args[0]);
-    if (duty < 0.0) {
-        duty = 0.0;
-    } else if (duty > 1.0) {
-        duty = 1.0;
-    }
+    (void)self; (void)nargs;   /* arity is checked by the VM: exactly one */
+    double duty;
+    if (urbi_value_kind(args[0]) == URBI_VALUE_INT)        duty = (double)urbi_value_as_int(args[0]);
+    else if (urbi_value_kind(args[0]) == URBI_VALUE_FLOAT) duty = urbi_value_as_float(args[0]);
+    else return urbi_throw(vm, "TypeError", "led_pwm: duty must be a number");
+    if (duty < 0.0) duty = 0.0;
+    if (duty > 1.0) duty = 1.0;
     led_pwm_init_once();
-    uint16_t level = (uint16_t)(duty * (double)PICO_LED_PWM_WRAP + 0.5);
-    pwm_set_chan_level(PICO_LED_PWM_SLICE, PICO_LED_PWM_CHAN, level);
-    if (out != NULL) {
-        *out = urbi_make_nil();
-    }
-    return 0;
+    pwm_set_chan_level(PICO_LED_PWM_SLICE, PICO_LED_PWM_CHAN, (uint16_t)(duty * (double)PICO_LED_PWM_WRAP + 0.5));
+    *out = urbi_make_nil();
+    return UEXEC_OK;
 }
 
 int bsp_led_register(struct UVM *vm)
 {
     led_gpio_mode();
     gpio_put(PICO_LED_PIN, 0);
-
     int rc;
-    rc = urbi_register(vm, NULL, "led_on",     c_led_on);
-    if (rc != 0) { return rc; }
-    rc = urbi_register(vm, NULL, "led_off",    c_led_off);
-    if (rc != 0) { return rc; }
-    rc = urbi_register(vm, NULL, "led_toggle", c_led_toggle);
-    if (rc != 0) { return rc; }
-    rc = urbi_register(vm, NULL, "led_pwm",    c_led_pwm);
-    return rc;
+    if ((rc = urbi_register(vm, "Lobby.led_on",     c_led_on,     0, 0)) != URBI_OK) return rc;
+    if ((rc = urbi_register(vm, "Lobby.led_off",    c_led_off,    0, 0)) != URBI_OK) return rc;
+    if ((rc = urbi_register(vm, "Lobby.led_toggle", c_led_toggle, 0, 0)) != URBI_OK) return rc;
+    return         urbi_register(vm, "Lobby.led_pwm",    c_led_pwm,    1, 1);
 }
-
-#endif /* PICO_BOARD */

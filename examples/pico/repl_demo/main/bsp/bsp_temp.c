@@ -8,27 +8,15 @@
  * Conversion: raw is 12-bit (0..4095); V = raw * 3.3 / 4096;
  *             T_C = 27 - (V - 0.706) / 0.001721.
  *
- * One flat host-fn:
- *   temp_celsius() -> float
- *
- * On host builds (no PICO_BOARD), bsp_temp_register is a no-op stub. */
+ * One verb on Lobby:
+ *   temp_celsius() -> float */
 
 #include "bsp_temp.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 
-#ifdef PICO_BOARD
-#  include "pico/stdlib.h"
-#  include "hardware/adc.h"
-#endif
-
-#ifndef PICO_BOARD
-int bsp_temp_register(struct UVM *vm)
-{
-    (void)vm;
-    return 0;
-}
-#else /* PICO_BOARD */
+#include "pico/stdlib.h"
+#include "hardware/adc.h"
 
 #define PICO_TEMP_ADC_CHANNEL  4U
 #define PICO_TEMP_VREF         3.3
@@ -48,8 +36,7 @@ static void temp_adc_init_once(void)
     s_adc_inited = true;
 }
 
-static int c_temp_celsius(struct UVM *vm, UValue self,
-                          UValue *args, uint8_t nargs, UValue *out)
+static int c_temp_celsius(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 {
     (void)vm; (void)self; (void)args; (void)nargs;
     temp_adc_init_once();
@@ -57,17 +44,13 @@ static int c_temp_celsius(struct UVM *vm, UValue self,
     uint16_t raw = adc_read();
     double v = ((double)raw * PICO_TEMP_VREF) / PICO_TEMP_FULLSCALE;
     double t_c = 27.0 - (v - PICO_TEMP_V27) / PICO_TEMP_SLOPE;
-    if (out != NULL) {
-        *out = urbi_make_float(t_c);
-    }
-    return 0;
+    *out = urbi_make_float(t_c);
+    return UEXEC_OK;
 }
 
 int bsp_temp_register(struct UVM *vm)
 {
     /* ADC init deferred to first call so that, if temp_celsius is never
      * invoked, the ADC block stays in reset (small static-current win). */
-    return urbi_register(vm, NULL, "temp_celsius", c_temp_celsius);
+    return urbi_register(vm, "Lobby.temp_celsius", c_temp_celsius, 0, 0);
 }
-
-#endif /* PICO_BOARD */
