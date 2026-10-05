@@ -421,6 +421,71 @@ static void a_tiny_budget_is_advisory_not_fatal(void)
     urbi_close(vm);
 }
 
+/* An interrupt handler names an event by id; the host binds the same
+ * cell where script can see it.  Bound on Object, it resolves unqualified
+ * from every realm, which is what a REPL session needs. */
+static void a_registered_event_has_a_value_script_can_watch(void) {
+    UVM *vm = api_open();
+    urbi_event_id_t id = URBI_EVENT_ID_INVALID;
+    RT_EQ(urbi_event_register(vm, NULL, "button", &id), URBI_OK);
+
+    UValue ev = urbi_make_int(0);
+    RT_EQ(urbi_event_value(vm, id, &ev), URBI_OK);
+    RT_EQ(urbi_value_kind(ev), URBI_VALUE_EVENT);
+
+    UValue object = urbi_make_nil();
+    RT_EQ(urbi_global_get(vm, NULL, "Object", &object), URBI_OK);
+    RT_EQ(urbi_slot_set(vm, object, "button", ev), URBI_OK);
+
+    URealm *other = urbi_realm_new(vm);
+    RT_CHECK(other != NULL);
+    UValue out = urbi_make_nil();
+    char err[256] = {0};
+    const char *src = "var hits = 0 | at (button?) { Realm.hits = Realm.hits + 1 }";
+    RT_EQ(urbi_run(vm, other, src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+
+    RT_EQ(urbi_inject_event(vm, id, NULL, 0), URBI_OK);
+    RT_EQ(urbi_step(vm, 0, NULL), URBI_STEP_QUIESCENT);
+    UValue hits = urbi_make_nil();
+    RT_EQ(urbi_global_get(vm, other, "hits", &hits), URBI_OK);
+    RT_EQ(hits.v.i, 1);
+
+    /* The refusals. */
+    RT_EQ(urbi_event_value(vm, (urbi_event_id_t)(id + 1), &ev), URBI_ERR_INVALID_ARG);
+    RT_EQ(urbi_event_value(vm, URBI_EVENT_ID_INVALID, &ev), URBI_ERR_INVALID_ARG);
+    RT_EQ(urbi_event_value(vm, id, NULL), URBI_ERR_INVALID_ARG);
+    RT_EQ(urbi_event_value(NULL, id, &ev), URBI_ERR_INVALID_ARG);
+
+    urbi_realm_free(vm, other);
+    urbi_close(vm);
+    RT_EQ(api_live, 0L);
+}
+
+/* The interrupt ring holds 16 records.  A 17th injection before a step
+ * is refused, and the step still delivers the 16 that fit, in order. */
+static void a_full_injection_ring_drops_the_overflow_and_keeps_the_rest(void) {
+    UVM *vm = api_open();
+    urbi_event_id_t id = URBI_EVENT_ID_INVALID;
+    RT_EQ(urbi_event_register(vm, NULL, "button", &id), URBI_OK);
+    UValue ev = urbi_make_nil();
+    RT_EQ(urbi_event_value(vm, id, &ev), URBI_OK);
+    RT_EQ(urbi_global_set(vm, NULL, "button", ev), URBI_OK);
+    UValue out = urbi_make_nil();
+    char err[256] = {0};
+    const char *src = "var hits = 0 | at (button?) { Realm.hits = Realm.hits + 1 }";
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+
+    for (int i = 0; i < 16; i++) RT_EQ(urbi_inject_event(vm, id, NULL, 0), URBI_OK);
+    RT_EQ(urbi_inject_event(vm, id, NULL, 0), URBI_ERR_OOM);
+    RT_EQ(urbi_step(vm, 0, NULL), URBI_STEP_QUIESCENT);
+    UValue hits = urbi_make_nil();
+    RT_EQ(urbi_global_get(vm, NULL, "hits", &hits), URBI_OK);
+    RT_EQ(hits.v.i, 16);
+
+    urbi_close(vm);
+    RT_EQ(api_live, 0L);
+}
+
 RT_SUITE(rt_api_suite) {
     rt_run("lifecycle_and_realms", lifecycle_and_realms);
     rt_run("run_and_format", run_and_format);
@@ -434,4 +499,6 @@ RT_SUITE(rt_api_suite) {
     rt_run("the_configured_step_budget_bounds_an_unbudgeted_step", the_configured_step_budget_bounds_an_unbudgeted_step);
     rt_run("version_and_null_arguments", version_and_null_arguments);
     rt_run("a_tiny_budget_is_advisory_not_fatal", a_tiny_budget_is_advisory_not_fatal);
+    rt_run("a_registered_event_has_a_value_script_can_watch", a_registered_event_has_a_value_script_can_watch);
+    rt_run("a_full_injection_ring_drops_the_overflow_and_keeps_the_rest", a_full_injection_ring_drops_the_overflow_and_keeps_the_rest);
 }

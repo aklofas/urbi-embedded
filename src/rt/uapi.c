@@ -524,6 +524,16 @@ int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *p
     return URBI_OK;
 }
 
+int urbi_event_value(UVM *vm, urbi_event_id_t id, UValue *out)
+{
+    if (out) *out = urbi_make_nil();
+    if (!vm || !out) return URBI_ERR_INVALID_ARG;
+    USched *sc = uvm_sched(vm);
+    if (id >= sc->event_count || sc->events[id] == NULL) return URBI_ERR_INVALID_ARG;
+    *out = uv_ptr(UV_CELL, sc->events[id]);
+    return URBI_OK;
+}
+
 /* The expression is compiled as an ordinary chunk and its root closure
  * becomes the watcher's condition: a chunk's value is its last statement's
  * value, which for a one-expression source is the expression.  The

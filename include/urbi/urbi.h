@@ -327,6 +327,14 @@ int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_
  * URBI_ERR_OOM when the ring is full (the injection is dropped, which is
  * the only thing available without blocking an interrupt). */
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
+/* The event cell an id names.  An interrupt handler can only inject by
+ * id, and script can only wait on a value; this is the bridge.  Store the
+ * value where script will look -- on a realm's globals with
+ * urbi_global_set, or on the shared Object prototype with urbi_slot_set
+ * so every realm sees it -- and `at (name?)` works for an injected event
+ * exactly as for an emitted one.  URBI_ERR_INVALID_ARG for an id nothing
+ * was registered under, or a NULL out. */
+int urbi_event_value(UVM *vm, urbi_event_id_t id, UValue *out);
 #ifndef URBI_BYTECODE_ONLY
 /* Requires the compiler frontend: this takes source, and a bytecode-only
  * archive has no compiler, so it is not declared under URBI_BYTECODE_ONLY. */

@@ -108,6 +108,7 @@ server is parked; these four are the cooperative core.
 - `urbi_event_emit`
 - `urbi_event_register`
 - `urbi_inject_event`
+- `urbi_event_value`
 - `urbi_watch`
 
 ### Tags

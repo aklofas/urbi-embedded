@@ -490,10 +490,14 @@ per-session REPL, or a per-behaviour sandbox, cheap.
 int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_t *out_id);
 
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
+
+int urbi_event_value(UVM *vm, urbi_event_id_t id, UValue *out);
 ```
 
-Register once, at start-up, and keep the id. `urbi_inject_event` is the
-one entry point safe to call from outside the step loop — it appends to a
+Register once, at start-up, and keep the id. `urbi_event_value` hands
+back the event the id names, so the host can store it where script looks:
+`urbi_global_set` for one realm, or `urbi_slot_set` on `Object` for every
+realm. `urbi_inject_event` is the one entry point safe to call from outside the step loop — it appends to a
 ring the scheduler drains — which makes it the right shape for an
 interrupt handler.
 
