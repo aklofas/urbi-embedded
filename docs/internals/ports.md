@@ -93,9 +93,9 @@ the Pico and STM32F4 entries describe what builds now.
     the LCD framebuffer.
   - The float layout is fixed (always f64), so there is no float-type
     build flag to keep in step between the application and liburbi.a.
-  - The ILI9341's native surface is 320×240 landscape; the component's
+  - The ILI9341's native surface is 240×320 portrait; the component's
     `port_lcd_fill_rect_native` rotates every rectangle 90° so the
-    workload can address it as a 240×320 portrait surface
+    workload can address it as a 320×240 landscape surface
     (`port_lcd.c`).
   - TIM2 (the render tick) and the button's EXTI0 interrupt both call
     `urbi_inject_event`, whose ring has a single producer, so the two

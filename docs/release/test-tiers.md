@@ -72,10 +72,10 @@ stable releases. Not required for v0.10.x interstitial tags.
 | Tier | Count | Wall-clock |
 |---|---|---|
 | devtest | ~1970 unit cases + 269 .chk fixtures | ~30 s |
-| releasetest Phase 1 | 41 gates | ~90 s |
+| releasetest Phase 1 | 26 gates | ~90 s |
 | releasetest Phase 2 | 2 gates | ~60 s |
 | shiptest | releasetest + manual checklist | variable |
 
-The 41-gate Phase 1 count includes the W5 gate (`test-stdlib-bytecode-fresh`)
+The 26-gate Phase 1 count includes the W5 gate (`test-stdlib-bytecode-fresh`)
 added at v0.10.6-stabilization, plus `test-port-stm32f4` added at
 v0.16.2-stm32f4.
