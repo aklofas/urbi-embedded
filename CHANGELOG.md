@@ -39,11 +39,13 @@ v2.0 / `0x20`.
   before the first render finishes; a button press re-renders at half
   the span; ten re-renders return to the same live bytes; a press
   during a render aborts and restarts it.
-- The `urbi` CLI's compile budget (depth 256, nodes 100,000, source
-  65,536 bytes) — the same three constants the eval service already
-  applies to a session's realm — applied to the CLI's own realm via
-  `urealm_set_budget`; pinned by a `-e` smoke case in
-  `tests/integration/repl_smoke.sh`.
+- The `urbi` CLI's compile budget (depth 256, nodes 100,000) — the
+  same depth and node caps the eval service already applies to a
+  session's realm — applied to the CLI's own realm via
+  `urealm_set_budget`. The source-size cap is left at 0 (unbounded):
+  that limit guards the server against an untrusted network peer, and
+  does not apply to a file the user handed to the CLI themselves.
+  Pinned by a `-e` smoke case in `tests/integration/repl_smoke.sh`.
 
 ### Changed
 

@@ -27,11 +27,14 @@
 
 #define URBI_CLI_MAX_FILE (16u * 1024u * 1024u)
 
-/* The same compile limits urbi-server gives a session.  Source typed at a
- * prompt or handed in with -e is not trusted to be shallow: a line nested
- * ten thousand deep is refused here instead of recursing through the
- * parser. */
-static const UCompileBudget CLI_BUDGET = { 256, 100000, 65536 };
+/* The server's depth and node caps, applied to the CLI's own realm:
+ * source typed at a prompt or handed in with -e is not trusted to be
+ * shallow, and a line nested ten thousand deep is refused here instead
+ * of recursing through the parser.  The source-size cap is the server's
+ * guard against an untrusted network peer; it does not apply here, since
+ * a file the user handed to the CLI is not that (0 = unbounded for that
+ * field, see UCompileBudget in types.h). */
+static const UCompileBudget CLI_BUDGET = { 256, 100000, 0 };
 
 static void print_usage(FILE *out) {
     fputs(
