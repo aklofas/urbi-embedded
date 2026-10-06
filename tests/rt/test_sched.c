@@ -1057,6 +1057,40 @@ static void an_awaited_strand_survives_reaping(void)
     RT_EQ(fx.ca.live, 0u);
 }
 
+/* After a budgeted step that stopped with strands still runnable, and a
+ * synchronous run of something else, the predicate must agree with the
+ * run queue: true while anything is READY, false once the queue is empty
+ * and no timer or watcher is armed. */
+static void live_work_agrees_with_the_queue_after_a_budgeted_step_and_a_run(void)
+{
+    Fix fx; fix_open(&fx);
+    /* Two busy strands that count for a long time, then stop.  Each
+     * sleeps first: urbi_run pumps until nothing is READY, so a strand
+     * that started busy would finish inside the run that detached it.
+     * Parked on a timer, both wake in the budgeted step instead. */
+    run_ok(&fx, "var n = 0");
+    run_ok(&fx, "__detach_strand(function() { sleep(1ms); var i = 0; while (i < 200000) { i = i + 1 }; Realm.n = Realm.n + 1 })");
+    run_ok(&fx, "__detach_strand(function() { sleep(1ms); var i = 0; while (i < 200000) { i = i + 1 }; Realm.n = Realm.n + 1 })");
+    RT_EQ(global_int(&fx, "n"), 0);
+    fx.now_us += 2000;
+    RT_EQ(urbi_step(fx.vm, 256, NULL), URBI_STEP_RAN);
+    RT_CHECK(urbi_has_live_work(fx.vm));
+
+    /* The synchronous run the report names. */
+    run_ok(&fx, "1 + 1");
+    /* Both strands either finished during that run's pump (n == 2) or are
+     * still READY (n < 2); the predicate must say which. */
+    int64_t n = global_int(&fx, "n");
+    if (n < 2) RT_CHECK(urbi_has_live_work(fx.vm));
+    else       RT_CHECK(!urbi_has_live_work(fx.vm));
+
+    while (urbi_step(fx.vm, 256, NULL) == URBI_STEP_RAN) { }
+    RT_EQ(global_int(&fx, "n"), 2);
+    RT_CHECK(!urbi_has_live_work(fx.vm));
+    fix_close(&fx);
+    RT_EQ(fx.ca.live, (size_t)0);
+}
+
 RT_SUITE(rt_sched_suite) {
     rt_run("separators_run_both_arms", separators_run_both_arms);
     rt_run("join_waits_for_the_child", join_waits_for_the_child);
@@ -1094,4 +1128,5 @@ RT_SUITE(rt_sched_suite) {
     rt_run("dead_strands_are_reaped_inside_a_step", dead_strands_are_reaped_inside_a_step);
     rt_run("an_inline_join_loop_runs_in_bounded_memory", an_inline_join_loop_runs_in_bounded_memory);
     rt_run("an_awaited_strand_survives_reaping", an_awaited_strand_survives_reaping);
+    rt_run("live_work_agrees_with_the_queue_after_a_budgeted_step_and_a_run", live_work_agrees_with_the_queue_after_a_budgeted_step_and_a_run);
 }

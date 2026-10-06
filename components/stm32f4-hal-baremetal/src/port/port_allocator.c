@@ -1,34 +1,36 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bump + first-fit freelist allocator for urbi on bare-metal STM32F4.
  *
- * Upgrade history:
- *   v0.8.2 initial: leak-only bump.  Each watcher body strand spawn
- *     leaked its 32 KB register stack on death; the 1 MB SDRAM heap
- *     filled in ~32 spawns and every subsequent at-handler died with
- *     "out of memory (stack alloc)" (same failure mode as v0.7.2
- *     eye_demo before T20 eager-reap landed).
- *   v0.8.2 freelist (this file): per-allocation 8-byte (M4) header
- *     [size, next], free pushes block onto LIFO freelist, alloc walks
- *     freelist first-fit before bumping, large-block reuses are split
- *     so a 32 KB strand-stack block freed by one strand death is not
- *     wasted serving a 256 B UClosure alloc.  Realloc preserves contents
- *     via min(old_payload, new_size) memcpy.
+ * Every allocation carries a header; free pushes the block onto a LIFO
+ * freelist, alloc walks the freelist (good-fit, then first-fit) before
+ * bumping, and a large recycled block is split so a freed strand stack
+ * is not wasted serving a small object.  Realloc keeps the block when it
+ * is already big enough and otherwise moves the contents.
  *
  * Layout:
- *   Each allocation carries an 8-byte (M4) / 16-byte (x86_64) header:
- *     { uintptr_t size; struct fl_hdr *next; }
- *   Returned pointer is the byte past the header.  Header is 8-aligned
- *   (heap base + heap_top stay 8-aligned via ALIGN8), so the returned
- *   payload pointer is also 8-aligned.
+ *   Each allocation carries a header:
+ *     { uintptr_t size; struct fl_hdr *next; size_t requested; }
+ *   which is 12 bytes on the M4 (24 on x86_64), rounded up to a multiple
+ *   of 8 (FL_HDR_BYTES: 16 on the M4, 24 on x86_64).  The returned
+ *   pointer is the byte past the rounded header.  The heap base and
+ *   heap_top stay 8-aligned, so every payload is 8-aligned.
+ *
+ * Live bytes:
+ *   s_live_bytes counts the bytes callers asked for and still hold --
+ *   not block sizes, not header overhead.  Alloc adds the request, free
+ *   subtracts the stored request, an in-place realloc moves it by the
+ *   difference, and a moving realloc is an alloc plus a free.  A refused
+ *   request changes nothing.
  *
  * Lifecycle states:
  *   - in heap, unallocated (above heap_top): zero-init
- *   - in heap, allocated:  header.size = total_block, header.next ignored
+ *   - in heap, allocated:  header.size = total_block, header.next ignored,
+ *                          header.requested = bytes the caller asked for
  *   - in heap, freed:      header.size = total_block, header.next = freelist link
  *
- * Two heap-placement modes (unchanged from initial design):
+ * Two heap-placement modes:
  *   1. Internal SRAM (default): static array in .bss, sized URBI_HEAP_BYTES
- *      (default 80 KB).  Fast but limited by SRAM (F429 = 192 KB total).
+ *      (default 128 KB).  Fast but limited by SRAM (F429 = 192 KB total).
  *   2. External SDRAM (define URBI_HEAP_EXTERNAL_ADDR at build time):
  *      heap points to a fixed SDRAM region.  Caller must initialize the
  *      SDRAM controller (e.g., BSP_SDRAM_Init) before the first port_alloc
@@ -54,7 +56,7 @@
 #include <string.h>
 
 #ifndef URBI_HEAP_BYTES
-#  define URBI_HEAP_BYTES  (80U * 1024U)
+#  define URBI_HEAP_BYTES  (128U * 1024U)
 #endif
 
 /* Align to 8 bytes (sufficient for double / 64-bit pointer on M4F + keeps
@@ -75,13 +77,19 @@ static uint8_t heap[URBI_HEAP_BYTES] __attribute__((aligned(8)));
 #endif
 static size_t  heap_top = 0;
 
-/* Per-allocation header.  `size` is the TOTAL block size including this
- * header (lets future coalescing-by-walk land without a separate length
- * table).  `next` links freelist entries; ignored when block is live. */
+/* Per-allocation header.  `size` is the TOTAL block size including the
+ * rounded header (lets future coalescing-by-walk land without a separate
+ * length table).  `next` links freelist entries; ignored when block is
+ * live.  `requested` is what the caller asked for, the unit the live
+ * counter moves in. */
 typedef struct fl_hdr {
     uintptr_t       size;
     struct fl_hdr  *next;
+    size_t          requested;
 } fl_hdr;
+
+/* The header rounded so the payload behind it stays 8-aligned. */
+#define FL_HDR_BYTES  ALIGN8(sizeof(fl_hdr))
 
 static fl_hdr *s_freelist = NULL;
 
@@ -95,7 +103,9 @@ static size_t s_free_count  = 0;
 static size_t s_freelist_hits = 0;
 static size_t s_freelist_splits = 0;
 static size_t s_largest_satisfied = 0;
+static size_t s_live_bytes = 0;
 
+size_t port_alloc_live_bytes(void) { return s_live_bytes; }
 size_t port_alloc_heap_top(void)  { return heap_top; }
 size_t port_alloc_heap_size(void) { return URBI_HEAP_BYTES; }
 const void *port_alloc_heap_base(void) { return (const void *)heap; }
@@ -166,24 +176,27 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         s_last_null_ptr_arg = ptr;
         s_last_null_nbytes_arg = 0;
         if (ptr == NULL) return NULL;
-        fl_hdr *h = (fl_hdr *)((uint8_t *)ptr - sizeof(fl_hdr));
+        fl_hdr *h = (fl_hdr *)((uint8_t *)ptr - FL_HDR_BYTES);
         h->next = s_freelist;
         s_freelist = h;
+        s_live_bytes -= h->requested;
         s_free_count++;
         return NULL;
     }
 
     size_t payload_need = ALIGN8(nbytes);
-    size_t total_need   = payload_need + sizeof(fl_hdr);
+    size_t total_need   = payload_need + FL_HDR_BYTES;
 
     /* Realloc — ptr != NULL, nbytes > 0.  If the existing block already
      * satisfies the new size, return it unchanged (no split — avoids
      * fragmenting the live block).  Otherwise: alloc new + memcpy
      * min(old_payload, new_payload) + free old. */
     if (ptr != NULL) {
-        fl_hdr *h = (fl_hdr *)((uint8_t *)ptr - sizeof(fl_hdr));
-        size_t old_payload = (size_t)h->size - sizeof(fl_hdr);
+        fl_hdr *h = (fl_hdr *)((uint8_t *)ptr - FL_HDR_BYTES);
+        size_t old_payload = (size_t)h->size - FL_HDR_BYTES;
         if (old_payload >= payload_need) {
+            s_live_bytes = s_live_bytes - h->requested + nbytes;
+            h->requested = nbytes;
             return ptr;
         }
         void *new_ptr = port_alloc(NULL, nbytes, ud);
@@ -203,7 +216,7 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         /* Split the block if the unused tail is worth keeping.  Otherwise
          * give the caller the whole block (some internal slack). */
         size_t leftover = (size_t)h->size - total_need;
-        if (leftover >= sizeof(fl_hdr) + FL_SPLIT_MIN_TAIL_PAYLOAD) {
+        if (leftover >= FL_HDR_BYTES + FL_SPLIT_MIN_TAIL_PAYLOAD) {
             fl_hdr *tail = (fl_hdr *)((uint8_t *)h + total_need);
             tail->size = leftover;
             tail->next = s_freelist;
@@ -211,10 +224,12 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
             h->size = total_need;
             s_freelist_splits++;
         }
+        h->requested = nbytes;
+        s_live_bytes += nbytes;
         s_freelist_hits++;
         s_alloc_count++;
         if ((size_t)h->size > s_largest_satisfied) s_largest_satisfied = (size_t)h->size;
-        return (uint8_t *)h + sizeof(fl_hdr);
+        return (uint8_t *)h + FL_HDR_BYTES;
     }
 
     /* Bump from heap_top. */
@@ -227,8 +242,10 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
     h = (fl_hdr *)&heap[heap_top];
     h->size = total_need;
     h->next = NULL;
+    h->requested = nbytes;
+    s_live_bytes += nbytes;
     heap_top += total_need;
     s_alloc_count++;
     if (total_need > s_largest_satisfied) s_largest_satisfied = total_need;
-    return (uint8_t *)h + sizeof(fl_hdr);
+    return (uint8_t *)h + FL_HDR_BYTES;
 }

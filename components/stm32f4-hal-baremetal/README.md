@@ -13,8 +13,8 @@ See the example Makefile for the full `arm-none-eabi-gcc` invocation
 For cross-compile sanity check of urbi-core against the F4 target:
 
 ```sh
-make cross-stm32f4              # full build
-make cross-stm32f4-bytecode-only # bytecode-only freestanding gate
+make cross-arm-cortex-m4f              # full build
+make cross-arm-cortex-m4f-bytecode-only # bytecode-only freestanding gate
 ```
 
 ## Public API
@@ -33,4 +33,5 @@ the urbi register hooks.
 | CCM    | 0x10000000 | 64 KB  | reserved                          |
 | SDRAM  | 0xD0000000 | 8 MB   | framebuffer + spare               |
 
-`urbi_heap` carved at `URBI_HEAP_BYTES` (default 80 KB) from SRAM1.
+`urbi_heap` carved at `URBI_HEAP_BYTES` (default 128 KB) from the contiguous
+192 KB SRAM region (SRAM1-3) the linker script maps as `RAM`.

@@ -1,5 +1,112 @@
 # Changelog
 
+## v0.16.2-stm32f4 — 2026-10-DD
+
+The STM32F429I-DISC1 Mandelbrot example is rebuilt on the re-founded
+core, rendering from a 128 KB internal-SRAM heap through a detached
+render loop and a host-baked workload. Two runtime-hygiene gaps the
+owner ruled on this cycle are closed: the parser counts statement
+nesting against the compile budget, and the `urbi` CLI applies a
+compile budget to its own realm. `block()` is ruled a pause gate. No
+public C API change. ABI 0/28/0 -> 0/28/1. Wire format unchanged at
+v2.0 / `0x20`.
+
+### Added
+
+- `tools/bake-header.sh`: turns an urbiscript file into a C header
+  holding its serialized chunk, the same way the Pico's `bake.cmake`
+  does, via the host `urbi --dump-wire-format`; bakes `mandelbrot.u`
+  into `mandelbrot_baked.h` at build time.
+- The STM32F4 example, rebuilt: the component
+  (`components/stm32f4-hal-baremetal/`) speaks the current allocator,
+  writer, diagnostics and event hooks, with a 128 KB arena in internal
+  SRAM served by a bump-and-freelist allocator and its own
+  requested-bytes counter (`port_alloc_live_bytes`); the workload's
+  main loop is a `detach`ed strand that renders, reports each render
+  on a `render:` console line, and `waituntil`s the next trigger (a
+  button press or a pan); one `make stm32f4-mandelbrot` target builds
+  the host `urbi`, the freestanding `arm-cortex-m4f-bytecode-only`
+  archive, and the firmware through the example's own Makefile.
+- The `cross-stm32f4` CI job: installs the xpack toolchain, sparse-clones
+  the STM32CubeF4 v1.28.2 subtrees the demo needs, runs `make
+  stm32f4-mandelbrot` and the component's host tests, prints the
+  firmware footprint, and uploads the `.bin` as a build artifact.
+- `test-port-stm32f4`: 11 host-side cases covering the component's
+  allocator and DWT time source against a mock of the two BSP symbols
+  they touch; in `RELEASETEST_PHASE1` after `test-freestanding-host`.
+- Four host-side pins for the workload's board contract
+  (`tests/unit/test_stm32f4_workload.c`): it returns from `urbi_load`
+  before the first render finishes; a button press re-renders at half
+  the span; ten re-renders return to the same live bytes; a press
+  during a render aborts and restarts it.
+- The `urbi` CLI's compile budget (depth 256, nodes 100,000) — the
+  same depth and node caps the eval service already applies to a
+  session's realm — applied to the CLI's own realm via
+  `urealm_set_budget`. The source-size cap is left at 0 (unbounded):
+  that limit guards the server against an untrusted network peer, and
+  does not apply to a file the user handed to the CLI themselves.
+  Pinned by a `-e` smoke case in `tests/integration/repl_smoke.sh`.
+
+### Changed
+
+- The parser counts braced blocks, unbraced `if`/`while`/`else` arms,
+  unbraced `at`/`whenever`/`every` bodies (including their `onleave`
+  and `else` arms), and unbraced tag-prefix (`name: stmt`) bodies
+  against the same `max_parser_depth` budget expressions already used;
+  a source whose statement nesting exceeds the budget is now refused
+  with the depth error, same as before for expression nesting. No
+  change to a compile with no budget set. One consequence: an `else
+  if` ladder is nested arms, so a long ladder (about ten branches, at
+  a budget of 12) is now refused at that budget.
+- `block()` is ruled a pause gate, not legacy's stop-and-skip: a
+  strand under a blocked tag parks where it is and resumes on
+  `unblock`, and a newcomer entering a blocked tag's scope is held the
+  same way. The two held fixtures, `tests/chk/tag/block.chk` and
+  `block-propagation.chk`, are activated unchanged against the core as
+  it already stood (369 -> 371 passing).
+- `urbi_has_live_work`'s reported gap — answering false while READY
+  strands remain — does not reproduce on this tree (four shapes tried:
+  `__detach_strand` / `detach {}`, each followed by `urbi_run` and by
+  `urbi_call`); the predicate is pinned against the run queue by
+  `tests/rt/test_sched.c`. `src/rt/usched.c` is unchanged.
+
+### Removed
+
+- The component's ISR-check adapter (`port_isr_check.c`) and the fake
+  event symbols it exposed for host testing; five mock tests written
+  against the retired API (`test_port_button.c`, `test_port_diag.c`,
+  `test_port_gyro.c`, `test_port_lcd.c`, `test_port_writer.c`).
+- The example's retired references: the `build/arm-cortex-m4/`
+  archive path, `tools/urbi-compile-stdlib-f4`, `URBI_FLOAT_TYPE`, and
+  an SDRAM heap by default (SDRAM stays selectable, not the default).
+
+### Documentation
+
+- `docs/internals/ports.md`'s STM32F429I-DISC1 section rewritten for
+  what builds at this tag; `docs/release/port-build-flash-guide.md`,
+  `docs/release/hardware-validation.md`,
+  `docs/release/release-readiness.md`, `docs/release/test-tiers.md`,
+  `docs/internals/test-harness.md`, `docs/internals/build-system.md`,
+  `docs/README.md`, `README.md` and `CONTRIBUTING.md` updated to
+  match: the Pico and the STM32F4 build in CI (`cross-pico-repl`,
+  `cross-stm32f4`); ESP32-S3 stays parked until its own tag.
+- The shell-tag review's open runtime-hygiene questions are closed and
+  recorded in the workspace-root design-risks register and in
+  `REVIVAL.md` §14 / §14.9: the parser's statement-nesting gap, the
+  `urbi` CLI's missing compile budget, and what `block()` does.
+
+### Measured on this build
+
+| Number | Value |
+|---|---|
+| Firmware `mandelbrot.elf` (text / data / bss) | 119,608 / 164 / 148,800 bytes |
+| Firmware `mandelbrot.bin` | 119,776 bytes |
+| Bytecode-only Cortex-M4F archive (`build/arm-cortex-m4f-bytecode-only/liburbi.a`) | 86,324 bytes text+data+bss |
+| Host re-render drift (32 x 24 canvas, 10 renders, 64-bit) | worst 144 bytes |
+| 32-bit boot heap (qemu probe) | 48,980 bytes, unchanged by this tag |
+| Runners | unit 588 / 0 (584 + 4 new); runtime (rt) 255 / 0 (254 + 1 new); corpus (chk) 371 / 0 (369 + 2 activated) |
+| Board figures | pending the board log |
+
 ## v0.16.1-pico — 2026-10-05
 
 The Raspberry Pi Pico example is rebuilt on the re-founded core: a

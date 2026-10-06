@@ -10,6 +10,7 @@
 
 extern void port_button_exti_handler(void);
 extern void port_gyro_tick_isr(void);
+extern void port_fault_loop(void);
 extern TIM_HandleTypeDef htim2;
 
 void SysTick_Handler(void) {
@@ -31,10 +32,10 @@ void TIM2_IRQHandler(void) {
     }
 }
 
-void HardFault_Handler(void)    { while (1); }
-void MemManage_Handler(void)    { while (1); }
-void BusFault_Handler(void)     { while (1); }
-void UsageFault_Handler(void)   { while (1); }
+void HardFault_Handler(void)    { port_fault_loop(); }
+void MemManage_Handler(void)    { port_fault_loop(); }
+void BusFault_Handler(void)     { port_fault_loop(); }
+void UsageFault_Handler(void)   { port_fault_loop(); }
 void NMI_Handler(void)          { }
 void SVC_Handler(void)          { }
 void DebugMon_Handler(void)     { }

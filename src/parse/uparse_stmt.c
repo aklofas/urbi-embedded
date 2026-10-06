@@ -523,7 +523,7 @@ UAstNode *urbi_parse_statement_or_expr(UParser *p) {
    Each statement inside is a full outer-tier parse (including `;` chains).
    Statements are separated by `;` or `|`; a missing separator ends the block.
    Used by if/else; while and function will reuse this. --- */
-UAstNode *urbi_parse_block(UParser *p) {
+static UAstNode *parse_block_body(UParser *p) {
     UToken lbrace = urbi_parse_peek(p);
     { UAstNode *err = NULL; if (!expect(p, TOK_LBRACE, PARSE_EXPECTED_LBRACE, &err)) return err; }
 
@@ -564,6 +564,17 @@ UAstNode *urbi_parse_block(UParser *p) {
     node->u.block.stmts = stmts;
     node->u.block.count = count;
     return node;
+}
+
+/* A block is one level of nesting against the same depth budget as an
+ * expression, so `{{{...}}}` and nested `if (c) {` arms are refused
+ * before the parser recurses through them.  A refusal returns the error
+ * sentinel; ufront_compile asks uparse_budget_err which limit it was. */
+UAstNode *urbi_parse_block(UParser *p) {
+    if (!uparse_budget_enter(p)) return (UAstNode *)&uparser_oom_sentinel;
+    UAstNode *r = parse_block_body(p);
+    uparse_budget_leave(p);
+    return r;
 }
 
 /* parse_arm_stmt: parse exactly ONE statement in an unbraced if/while/else
@@ -656,7 +667,7 @@ UAstNode *urbi_parse_arm_stmt(UParser *p) {
  * Dangling else: always binds to the nearest if (standard C-style) because
  * the recursive urbi_parse_if inside parse_arm_stmt consumes the else before
  * returning. */
-static UAstNode *parse_single_stmt_as_block(UParser *p) {
+static UAstNode *parse_single_stmt_body(UParser *p) {
     UToken pos = urbi_parse_peek(p);
     UAstNode *stmt = urbi_parse_arm_stmt(p);
     if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
@@ -671,6 +682,15 @@ static UAstNode *parse_single_stmt_as_block(UParser *p) {
     block->u.block.stmts = stmts;
     block->u.block.count = 1;
     return block;
+}
+
+/* An unbraced arm is one level of nesting, same as a braced one, so the
+ * chain `if (c) if (c) ... stmt` is counted too. */
+static UAstNode *parse_single_stmt_as_block(UParser *p) {
+    if (!uparse_budget_enter(p)) return (UAstNode *)&uparser_oom_sentinel;
+    UAstNode *r = parse_single_stmt_body(p);
+    uparse_budget_leave(p);
+    return r;
 }
 
 /* --- urbi_parse_while: `while` `(` cond `)` body-block --- */

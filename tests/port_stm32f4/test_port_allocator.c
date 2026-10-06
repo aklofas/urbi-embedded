@@ -25,14 +25,14 @@ static void test_realloc_shrink(void) {
 }
 
 static void test_alloc_oom(void) {
-    /* The static heap is URBI_HEAP_BYTES (80 KB default). Allocating
+    /* The static heap is URBI_HEAP_BYTES (128 KB default). Allocating
      * something far larger MUST return NULL, not crash. */
     void *p = port_alloc(NULL, 1024 * 1024, NULL);
     assert(p == NULL);
     printf("test_alloc_oom PASS\n");
 }
 
-/* v0.8.2 freelist tests. */
+/* Freelist tests. */
 
 extern size_t port_alloc_freelist_hits(void);
 extern size_t port_alloc_count(void);
@@ -84,6 +84,44 @@ static void test_realloc_grow_preserves_contents(void) {
     printf("test_realloc_grow_preserves_contents PASS\n");
 }
 
+extern size_t port_alloc_live_bytes(void);
+
+/* The live counter is requested bytes, not block sizes: it goes up by
+ * what was asked, down by the same on free, and realloc moves it by the
+ * difference. */
+static void test_live_bytes_track_requests(void) {
+    size_t base = port_alloc_live_bytes();
+    void *p = port_alloc(NULL, 100, NULL);
+    assert(p != NULL);
+    assert(port_alloc_live_bytes() == base + 100);
+    void *q = port_alloc(p, 300, NULL);
+    assert(q != NULL);
+    assert(port_alloc_live_bytes() == base + 300);
+    void *r = port_alloc(q, 50, NULL);
+    assert(r != NULL);
+    assert(port_alloc_live_bytes() == base + 50);
+    port_alloc(r, 0, NULL);
+    assert(port_alloc_live_bytes() == base);
+    printf("test_live_bytes_track_requests PASS\n");
+}
+
+/* A request the arena cannot hold is refused with NULL and changes
+ * nothing: the counters still balance afterwards. */
+static void test_live_bytes_balance_after_a_refused_request(void) {
+    size_t base = port_alloc_live_bytes();
+    size_t count = port_alloc_count();
+    void *p = port_alloc(NULL, port_alloc_heap_size() + 1, NULL);
+    assert(p == NULL);
+    assert(port_alloc_live_bytes() == base);
+    assert(port_alloc_count() == count);
+    assert(port_alloc_last_failed_request() >= port_alloc_heap_size());
+    void *q = port_alloc(NULL, 64, NULL);   /* the arena still works */
+    assert(q != NULL);
+    port_alloc(q, 0, NULL);
+    assert(port_alloc_live_bytes() == base);
+    printf("test_live_bytes_balance_after_a_refused_request PASS\n");
+}
+
 int main(void) {
     test_alloc_basic();
     test_realloc_shrink();
@@ -91,5 +129,7 @@ int main(void) {
     test_free_then_alloc_reuses_freelist();
     test_oversize_freelist_block_is_split();
     test_realloc_grow_preserves_contents();
+    test_live_bytes_track_requests();
+    test_live_bytes_balance_after_a_refused_request();
     return 0;
 }

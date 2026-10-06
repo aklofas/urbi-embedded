@@ -6,18 +6,20 @@ architecture. Both the host-side build of all firmware and hardware flashing
 are manual and documented per-architecture below.
 
 **The Raspberry Pi Pico builds from this tree with `make
-pico-repl-demo`; ESP32-S3 and STM32F429I-DISC1 are parked until their
-own tags.** The core re-foundation replaced the runtime the latter two
-were brought up against, and neither's component manifest /
-`examples/` workload has been rebuilt on it. Section 1 (the Linux
-host) builds and runs today; section 2 (the Pico) builds and flashes
-from this tree; the steps in sections 3-4 are kept as a record of what
-worked at each port's own ship tag, not as commands that build against
-the tree as it stands. The generic Cortex-M0+/M4F/M7/RISC-V archives
-build and are footprint-measured on every push through the cross
-presets in [the build system doc](../internals/build-system.md); the
-Pico example wires in its own hosted shape of the Cortex-M0+ archive,
-and nothing wires one into the other two examples yet.
+pico-repl-demo`; the STM32F429I-DISC1 builds from this tree with `make
+stm32f4-mandelbrot`; ESP32-S3 is parked until its own tag.** The core
+re-foundation replaced the runtime ESP32-S3 was brought up against,
+and its component manifest / `examples/` workload has not been
+rebuilt on it. Section 1 (the Linux host) builds and runs today;
+sections 2 and 4 (the Pico and the STM32F4) build and flash from this
+tree; the steps in section 3 are kept as a record of what worked at
+ESP32-S3's own ship tag, not as commands that build against the tree
+as it stands. The generic Cortex-M0+/M4F/M7/RISC-V archives build and
+are footprint-measured on every push through the cross presets in
+[the build system doc](../internals/build-system.md); the Pico example
+wires in its own hosted shape of the Cortex-M0+ archive and the STM32F4
+example wires in the `arm-cortex-m4f` preset's bytecode-only shape,
+and nothing wires one into the ESP32-S3 example yet.
 
 ```sh
 git clone <repo-url> urbi-embedded
@@ -34,7 +36,7 @@ Work through the per-architecture steps below on a pristine tree (no stale
 | Linux host REPL | any C99 `cc` (gcc/clang) | — | — |
 | Raspberry Pi Pico (RP2040) | `arm-none-eabi-gcc` (xpack 14.2.1) + CMake 3.13+ | pico-sdk 2.2.0 (`PICO_SDK_PATH`, default `../tools/pico-sdk`) | drag-drop `.uf2` (BOOTSEL) |
 | ESP32-S3 | ESP-IDF v6.0.1 (`IDF_PATH`, `. $IDF_PATH/export.sh`) | bundled in IDF | `idf.py flash` |
-| STM32F429I-DISC1 | `arm-none-eabi-gcc` (xpack 14.2.1) | STM32CubeF4 v1.28.2 headers (vendored) | `st-flash` (stlink) |
+| STM32F429I-DISC1 | `arm-none-eabi-gcc` (xpack 14.2.1) | STM32CubeF4 v1.28.2 (`HAL_ROOT`, default `../tools/stm32cube-f4`) | STM32CubeCLT's `STM32_Programmer_CLI`, or `st-flash` (stlink) |
 
 ## 1. Linux host REPL (30-second quickstart)
 
@@ -69,19 +71,20 @@ idf.py -p /dev/ttyACM0 flash monitor
 The ~330-line eye demo runs a blob-detection loop; the BOOT button cycles the
 RGB LED (RED→GREEN→BLUE) tracking targets and the LCD shows a crosshair overlay.
 
-## 4. STM32F429I-DISC1 — `examples/stm32f4/mandelbrot` (parked until its own tag)
+## 4. STM32F429I-DISC1 — `examples/stm32f4/mandelbrot`
 
 ```sh
-cd examples/stm32f4/mandelbrot && make
-# -> build/mandelbrot.bin
-st-flash write build/mandelbrot.bin 0x8000000
+make stm32f4-mandelbrot        # host urbi + freestanding Cortex-M4F archive + firmware
+# -> examples/stm32f4/mandelbrot/build/mandelbrot.bin
+STM32_Programmer_CLI -c port=SWD -w examples/stm32f4/mandelbrot/build/mandelbrot.bin 0x08000000 -rst
 ```
 
-Reset; connect the ST-Link VCP (115200 8N1). The ILI9341 LCD renders the
-Mandelbrot set with progressive 32→1 tile refinement; tilting the board pans the
-view (gyro) and the USER button zooms 2×. Float values are `double` on every
-target, so there is no float-width build flag to keep consistent between the
-application and the library.
+Connect the ST-Link VCP (115200 8N1): `picocom -b 115200 /dev/ttyACM0`. The
+console prints a boot banner then `boot heap:` / `ready:` / `render:` lines;
+the ILI9341 LCD renders the Mandelbrot set with progressive 32→1 tile
+refinement; tilting the board pans the view (gyro) and the USER button zooms
+2×. Full build, flash, wire and known-limits detail is in
+[the example's own README](../../examples/stm32f4/mandelbrot/README.md).
 
 ## Notes
 

@@ -21,10 +21,20 @@
 #include "urbi/urbi.h"
 #include "emit/ufront.h"
 #include "chunk/uchunk.h"
+#include "rt/urealm.h"
 
 #include "linenoise.h"
 
 #define URBI_CLI_MAX_FILE (16u * 1024u * 1024u)
+
+/* The server's depth and node caps, applied to the CLI's own realm:
+ * source typed at a prompt or handed in with -e is not trusted to be
+ * shallow, and a line nested ten thousand deep is refused here instead
+ * of recursing through the parser.  The source-size cap is the server's
+ * guard against an untrusted network peer; it does not apply here, since
+ * a file the user handed to the CLI is not that (0 = unbounded for that
+ * field, see UCompileBudget in types.h). */
+static const UCompileBudget CLI_BUDGET = { 256, 100000, 0 };
 
 static void print_usage(FILE *out) {
     fputs(
@@ -451,6 +461,7 @@ int main(int argc, char *argv[]) {
     urbi_set_writer(vm, cli_writer, NULL);
     urbi_set_diag(vm, cli_diag, NULL);
     urbi_set_clock(vm, cli_clock, NULL);
+    urealm_set_budget(vm, urbi_realm_main(vm), &CLI_BUDGET);
     int rc = EXIT_SUCCESS;
 
     if (dump || dump_wire) {

@@ -106,6 +106,31 @@
 
 ## STM32F429I-DISC1
 
+### 2026-10-DD — v0.16.2-stm32f4 (board log pending)
+
+- **Board:** STM32F429I-DISC1 discovery kit (Cortex-M4F, 2 MB flash,
+  192 KB main SRAM + 64 KB CCM, 240×320 ILI9341 LCD, L3GD20 gyro,
+  hardware single-precision FPU).
+- **Toolchain:** the bench's `arm-none-eabi-gcc` (named at the gate).
+- **SDK:** STM32CubeF4 v1.28.2 (HAL + CMSIS + the DISC1 BSP + the
+  ili9341/l3gd20 component drivers; no CubeMX-generated code).
+- **Firmware artifact:** `examples/stm32f4/mandelbrot/build/mandelbrot.bin`
+  built by `make stm32f4-mandelbrot`; `mandelbrot.elf` text 119,608 /
+  data 164 / bss 148,800 B; `mandelbrot.bin` 119,776 B (xpack
+  arm-none-eabi-gcc 14.2.1).
+- **Smoke steps:**
+  1. Boot heap: the `boot heap:` line shows `alloc live` under
+     49,152 B.
+  2. First render: the LCD fills in coarse tiles that refine down to
+     single pixels, and the first `render:` line prints its time and
+     live bytes.
+  3. Re-render: each USER press prints a new `render:` line whose
+     `alloc live` is within 1,024 B of the first one's.
+  4. Ten presses: after ten presses there is no `OutOfMemoryError`
+     line and the board has not reset.
+- **Observed output:** pending.
+- **Verifier:** the owner.
+
 ### 2026-05-17 — v0.8.2-stm32f4-mandelbrot
 
 - **Board:** STM32F429I-DISC1 discovery kit (Cortex-M4F,

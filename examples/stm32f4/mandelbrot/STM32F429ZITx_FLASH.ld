@@ -39,8 +39,10 @@ ENTRY(Reset_Handler)
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 
+/* The stack runs down from _estack toward the end of .bss; the link fails
+ * if statics plus the 128 KB arena leave less than _Min_Stack_Size free. */
 _Min_Heap_Size = 0x200; /* required amount of heap */
-_Min_Stack_Size = 0x400; /* required amount of stack */
+_Min_Stack_Size = 0x4000; /* required amount of stack */
 
 /* Memories definition */
 MEMORY

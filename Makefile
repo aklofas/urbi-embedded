@@ -383,6 +383,18 @@ pico-repl-demo: $(BUILDDIR)/urbi cross-arm-cortex-m0plus-hosted
 	$(CMAKE) --build $(PICO_DEMO_DIR)/build --parallel
 	$(PICO_CROSS_SIZE) $(PICO_DEMO_DIR)/build/repl_demo.elf
 
+# The STM32F429I-DISC1 demo: the host urbi (it bakes the workload), the
+# freestanding Cortex-M4F archive, then the firmware through the example's
+# own Makefile, with the preset's compiler so archive and firmware come
+# from one toolchain.  STM32CubeF4 is taken from HAL_ROOT, defaulting to
+# the workspace-root tools/stm32cube-f4; a missing HAL is an error.
+HAL_ROOT ?= $(abspath ../tools/stm32cube-f4)
+STM32_DEMO_DIR  := examples/stm32f4/mandelbrot
+STM32_CROSS_CC  := $(shell sed -n 's/^CROSS_CC *:= *//p' presets/arm-cortex-m4f.mk)
+.PHONY: stm32f4-mandelbrot
+stm32f4-mandelbrot: $(BUILDDIR)/urbi cross-arm-cortex-m4f-bytecode-only
+	$(MAKE) -C $(STM32_DEMO_DIR) CC=$(shell command -v $(STM32_CROSS_CC)) HAL_ROOT=$(HAL_ROOT)
+
 # A different compiler behind the same name rebuilds the archive.
 .PHONY: test-flagstamp-toolchain
 test-flagstamp-toolchain:
@@ -625,6 +637,25 @@ test-chk-runner:
 test-freestanding-host:
 	@sh tests/scripts/build-freestanding-host.sh
 
+# The STM32F4 component's host-runnable tests: the allocator and the
+# DWT time source compiled with the host compiler against a mock of the
+# two BSP symbols they touch.  The LCD, gyro, button, writer and diag
+# adapters have no honest host test; the board gate is theirs.
+PORT_STM32F4_DIR  := components/stm32f4-hal-baremetal
+PORT_STM32F4_TESTS := test_port_allocator test_port_time
+.PHONY: test-port-stm32f4
+test-port-stm32f4:
+	@mkdir -p build/port_stm32f4
+	@for t in $(PORT_STM32F4_TESTS); do \
+	    src=port_allocator.c; [ "$$t" = test_port_time ] && src=port_time.c; \
+	    $(CC) -std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PORT_TEST=1 \
+	        -Iinclude -I$(PORT_STM32F4_DIR)/include -Itests/port_stm32f4 \
+	        tests/port_stm32f4/$$t.c tests/port_stm32f4/mock_bsp.c $(PORT_STM32F4_DIR)/src/port/$$src \
+	        -o build/port_stm32f4/$$t || exit 1; \
+	    build/port_stm32f4/$$t || exit 1; \
+	done
+	@echo "PASS: STM32F4 port host tests"
+
 # `make test`: the frontend runner, the runtime runner, the layering
 # gate, the .chk corpus driven through the urbi binary, and the two shell
 # harnesses that cover what the corpus cannot see -- the REPL smoke run
@@ -802,7 +833,7 @@ RELEASETEST_PHASE1 := \
     test-wire-format-determinism \
     test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
-    test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 test-embedding-guide \
+    test-chk-runner test-freestanding-host test-port-stm32f4 test-fuzz-smoke test-o2 test-embedding-guide \
     cross-all test-cross-missing-toolchain test-flagstamp-toolchain
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
@@ -1093,4 +1124,4 @@ check-version-sync:
 	@tests/scripts/check-version-sync.sh
 
 .PHONY: test-unit test-probes test-bench test-embedding-guide test-flagstamp-toolchain
-.PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 force-flagstamp pico-repl-demo
+.PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 force-flagstamp pico-repl-demo stm32f4-mandelbrot

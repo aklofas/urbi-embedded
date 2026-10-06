@@ -540,6 +540,86 @@ static void t_a_retained_closure_survives_its_realm(void)
     RT_EQ(ca.live, (size_t)0);
 }
 
+/* A source line made of N nested `if (1) {` arms around `1`, closed. */
+static void nested_ifs(char *buf, size_t cap, int n)
+{
+    size_t at = 0;
+    for (int i = 0; i < n && at + 8 < cap; i++) at += (size_t)snprintf(buf + at, cap - at, "if (1) {");
+    at += (size_t)snprintf(buf + at, cap - at, "1");
+    for (int i = 0; i < n && at + 2 < cap; i++) at += (size_t)snprintf(buf + at, cap - at, "}");
+}
+
+/* Statement nesting is counted against the same depth budget as
+ * expression nesting: a chain of nested arms past the budget is refused
+ * before the parser recurses through it, and a chain inside the budget
+ * still compiles. */
+static void t_statement_nesting_counts_against_the_depth_budget(void)
+{
+    CountAlloc ca;
+    UVM *vm = open_counted(&ca);
+    UCompileBudget b = { 12, 0, 0 };
+    urealm_set_budget(vm, urbi_realm_main(vm), &b);
+    char src[2048];
+    UValue out = urbi_make_nil();
+    char err[256] = { 0 };
+
+    nested_ifs(src, sizeof src, 8);
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+    RT_EQ(out.v.i, 1);
+
+    nested_ifs(src, sizeof src, 40);
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_COMPILE_BUDGET_DEPTH);
+
+    /* Bare braces are statement nesting too. */
+    size_t at = 0;
+    for (int i = 0; i < 40; i++) src[at++] = '{';
+    src[at++] = '1';
+    for (int i = 0; i < 40; i++) src[at++] = '}';
+    src[at] = '\0';
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_COMPILE_BUDGET_DEPTH);
+
+    /* An unbraced arm chain: `if (1) if (1) ... 1`. */
+    at = 0;
+    for (int i = 0; i < 40; i++) at += (size_t)snprintf(src + at, sizeof src - at, "if (1) ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_COMPILE_BUDGET_DEPTH);
+
+    /* An unbraced reactive-body chain: `at (1) at (1) ... 1`.  A short
+     * chain inside the budget still compiles. */
+    at = 0;
+    for (int i = 0; i < 40; i++) at += (size_t)snprintf(src + at, sizeof src - at, "at (1) ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_COMPILE_BUDGET_DEPTH);
+    at = 0;
+    for (int i = 0; i < 4; i++) at += (size_t)snprintf(src + at, sizeof src - at, "at (1) ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+
+    /* An unbraced tag-prefix chain: `t: t: ... 1`. */
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), "var t = Tag.new()", 17, NULL, &out, err, sizeof err), URBI_OK);
+    at = 0;
+    for (int i = 0; i < 40; i++) at += (size_t)snprintf(src + at, sizeof src - at, "t: ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_COMPILE_BUDGET_DEPTH);
+    at = 0;
+    for (int i = 0; i < 4; i++) at += (size_t)snprintf(src + at, sizeof src - at, "t: ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+
+    /* No budget: the deep chains compile (the emitter's own 32-block
+     * limit is a separate refusal and is not what this case is about). */
+    urealm_set_budget(vm, urbi_realm_main(vm), NULL);
+    nested_ifs(src, sizeof src, 20);
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+    urbi_close(vm);
+    RT_EQ(ca.live, (size_t)0);
+}
+
 void rt_realm_suite(void)
 {
     t_realm_shape();
@@ -557,4 +637,5 @@ void rt_realm_suite(void)
     t_arity_errors_name_and_count();
     t_lobby_echo_reaches_the_writer();
     t_a_retained_closure_survives_its_realm();
+    t_statement_nesting_counts_against_the_depth_budget();
 }

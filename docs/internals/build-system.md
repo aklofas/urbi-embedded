@@ -43,6 +43,19 @@ archive, and the Raspberry Pi Pico example through pico-sdk's CMake; it
 needs the SDK (`PICO_SDK_PATH`, or `../tools/pico-sdk`) and is not part
 of `releasetest`; CI runs it as `cross-pico-repl`.
 
+`make stm32f4-mandelbrot` builds the host `urbi`, the freestanding
+`arm-cortex-m4f-bytecode-only` archive, and the STM32F429I-DISC1
+Mandelbrot example through the example's own Makefile; it needs
+STM32CubeF4 (`HAL_ROOT`, or `../tools/stm32cube-f4`) and is not part of
+`releasetest` (the component's host tests, `test-port-stm32f4`, are);
+CI runs it as `cross-stm32f4`.
+
+Each example bakes its own workload into a header the same way: the
+Pico's `bake.cmake` and the STM32F4's `tools/bake-header.sh` both run
+the host `urbi --dump-wire-format` on the example's `.u` source and
+turn the resulting blob into a byte array the firmware loads with
+`urbi_load` — two bake scripts, one host binary doing the compiling.
+
 The cross build compiles the tracked `src/stdlib/urbi_stdlib_bytecode.gen.c`
 like any other source. The bake tool that produces it is host-only and
 never runs in a cross build.

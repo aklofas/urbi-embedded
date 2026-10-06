@@ -157,9 +157,9 @@ constParameterPointer:src/emit/uemit_internal.h:184
 // `UAstNode *err = NULL` inside `{ }` expect() one-liners; the outer `err` (reject_bare_function_forms
 // result) is a completely different variable at function scope.  The pattern is used at every
 // expect() call site in this file and cannot be removed without restructuring all callers.
-shadowVariable:src/parse/uparse_stmt.c:799
-shadowVariable:src/parse/uparse_stmt.c:816
-shadowVariable:src/parse/uparse_stmt.c:840
+shadowVariable:src/parse/uparse_stmt.c:819
+shadowVariable:src/parse/uparse_stmt.c:836
+shadowVariable:src/parse/uparse_stmt.c:860
 
 // audit:refound-task9 — every src/stdlib file defines native
 // methods whose signature is pinned by the boot table's UMethodDef:

@@ -69,6 +69,7 @@ extern void test_parse_watcher_suite(void);
 extern void test_parser_suite(void);
 extern void test_repl_outbuf_suite(void);
 extern void test_repl_sessions_suite(void);
+extern void test_stm32f4_workload_suite(void);
 extern void test_require_suite(void);
 extern void test_separators_suite(void);
 extern void test_uvalue_layout_suite(void);
@@ -114,6 +115,7 @@ int main(void) {
     test_parser_suite();
     test_repl_outbuf_suite();
     test_repl_sessions_suite();
+    test_stm32f4_workload_suite();
     test_require_suite();
     test_separators_suite();
     test_uvalue_layout_suite();
