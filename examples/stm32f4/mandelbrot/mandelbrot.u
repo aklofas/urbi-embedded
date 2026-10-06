@@ -1,19 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Mandelbrot set demo for STM32F429I-DISC1.
-// Progressive refinement (levels 32 -> 1).
-// Tilt-to-pan via L3GD20 gyro (host timer fires gyro_tick every 50ms).
-// USER button (PA0) zooms 2x at current center.
-//
-// v1.0 lex/emit guardrails in effect:
-//   * No `[...]`  list literal  — use List.new(...).
-//   * No `&&`/`||` shortcut    — nested if / boolean flag.
-//   * No `!bool`               — use == false (OP_NEG fails on UVAL_BOOL).
-//   * No `&` for bitwise AND   — use .bitand(mask).
-//   * No `every(T)` keyword    — not yet landed; gyro poll driven by a
-//     host-timer-injected `gyro_tick` event (50ms TIM2 ISR in main.c).
-//   * UVAL_INT is always truthy — use true/false for boolean flags.
-//   * Top-level vars are Realm globals; reactive bodies access them as
-//     Realm.X so the emitter resolves them via OP_GETSLOT on Realm.
+// The Mandelbrot set on the STM32F429I-DISC1's LCD, refined coarse to fine.
+// Host verbs: lcd_fill_rect(x, y, w, h, rgb565), gyro_x/y/z(), render_begin(),
+// render_end(); host events: button_press (zoom 2x), gyro_tick (pan, 50 ms).
+// The render loop is detached, so loading this chunk returns at once.
 
 // === World parameters ======================================================
 Realm.W        = 320;
@@ -258,12 +247,18 @@ at (button_press?) {
 
 // === Main render loop ======================================================
 //
-// Clears the redraw flag, renders all levels (aborting on flag), then blocks
-// until the next redraw trigger (gyro pan or button zoom).  The gyro_tick
-// and button_press at-handlers run as separate coroutines between the
-// cooperative yield points inside render_all.
-while (true) {
-    Realm.redraw_requested = false;
-    Realm.render_all();
-    waituntil (Realm.redraw_requested)
+// The render loop runs on its own strand: loading this chunk returns as
+// soon as it is installed, and interrupts are delivered between slices
+// of the render rather than after the whole first picture.  Loading runs
+// every runnable strand until none is left, so the loop first parks on a
+// zero-length sleep; the host's first urbi_step wakes it.
+detach {
+    sleep(0);
+    while (true) {
+        Realm.redraw_requested = false;
+        render_begin();
+        Realm.render_all();
+        render_end();
+        waituntil (Realm.redraw_requested)
+    }
 };
