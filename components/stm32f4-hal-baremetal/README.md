@@ -13,8 +13,8 @@ See the example Makefile for the full `arm-none-eabi-gcc` invocation
 For cross-compile sanity check of urbi-core against the F4 target:
 
 ```sh
-make cross-stm32f4              # full build
-make cross-stm32f4-bytecode-only # bytecode-only freestanding gate
+make cross-arm-cortex-m4f              # full build
+make cross-arm-cortex-m4f-bytecode-only # bytecode-only freestanding gate
 ```
 
 ## Public API

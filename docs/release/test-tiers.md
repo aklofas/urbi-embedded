@@ -24,7 +24,7 @@ make test
 - Freshness: `test-stdlib-bytecode-fresh`
 - Docs: `docs-check`
 - Coverage: `coverage` (`--fail-under-line 80` hard gate in Phase 1; see Makefile `coverage` target. Lowered from 85% in Phase 0 of the core re-foundation — the deleted runtime-internals unit tests covered code that the refound/core branch replaces; re-baseline for the new core when it lands. GitHub Actions runs the same target with `continue-on-error: true` so a regression does not block CI on already-merged code, but pre-tag `make releasetest` hard-fails. Condition coverage is not measured — v1.x target.)
-- Build hygiene: `test-bytecode-only`, `test-freestanding-host`, `test-bake-smoke`
+- Build hygiene: `test-bytecode-only`, `test-freestanding-host`, `test-port-stm32f4`, `test-bake-smoke`
 - API surface: `test-api-manifest`, `test-aux-symbols`, `test-embedding-guide`, `test-external-embed-iinclude`
 - Cross-compile: `cross-all` builds every preset (`arm-cortex-m0plus`,
   `arm-cortex-m4f`, `arm-cortex-m7`, `riscv32`) full and bytecode-only,
@@ -72,9 +72,10 @@ stable releases. Not required for v0.10.x interstitial tags.
 | Tier | Count | Wall-clock |
 |---|---|---|
 | devtest | ~1970 unit cases + 269 .chk fixtures | ~30 s |
-| releasetest Phase 1 | 40 gates | ~90 s |
+| releasetest Phase 1 | 41 gates | ~90 s |
 | releasetest Phase 2 | 2 gates | ~60 s |
 | shiptest | releasetest + manual checklist | variable |
 
-The 40-gate Phase 1 count includes the W5 gate (`test-stdlib-bytecode-fresh`)
-added at v0.10.6-stabilization.
+The 41-gate Phase 1 count includes the W5 gate (`test-stdlib-bytecode-fresh`)
+added at v0.10.6-stabilization, plus `test-port-stm32f4` added at
+v0.16.2-stm32f4.

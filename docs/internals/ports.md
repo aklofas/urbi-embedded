@@ -11,22 +11,24 @@ target Make recipes are in [`build-system.md`](./build-system.md).
 The host build is not a port — `make` (POSIX glibc) is the canonical
 development target. Ports below cover bare-metal + RTOS silicon.
 
-**The Raspberry Pi Pico is rebuilt on the current core at
-`v0.16.1-pico`** and builds in CI (`cross-pico-repl`); **ESP32-S3 and
-STM32F4 stay parked until their own tags** — the core re-foundation
-replaced the runtime they were brought up against, and neither has been
-rebuilt on it: the component manifests, the `components/` trees and the
-`examples/` workloads are all in the tree and all out of the build.
-The 32-bit memory figures are measured now, on a generic Cortex-M4
-under qemu's MPS2-AN386 model, through the `arm-cortex-m4f` cross
-preset: a booted VM holds 48,980 bytes live (cap 49,152), an idle
+**The Raspberry Pi Pico and the STM32F429I-DISC1 are rebuilt on the
+current core** — the Pico at `v0.16.1-pico` (builds in CI as
+`cross-pico-repl`, hardware-validated) and the STM32F4 at
+`v0.16.2-stm32f4` (builds in CI as `cross-stm32f4`, board log pending)
+— and **ESP32-S3 stays parked until its own tag**: the core
+re-foundation replaced the runtime it was brought up against, and it
+has not been rebuilt on it: its component manifest, the `components/`
+tree and the `examples/` workload are all in the tree and all out of
+the build. The 32-bit memory figures are measured now, on a generic
+Cortex-M4 under qemu's MPS2-AN386 model, through the `arm-cortex-m4f`
+cross preset: a booted VM holds 48,980 bytes live (cap 49,152), an idle
 sleeping strand costs 466 bytes, and the leak probes stay flat.
 `make test-probes-32bit` regenerates them (it needs `arm-none-eabi-gcc`
 with newlib and `qemu-system-arm`; CI runs it) — but that preset is
 generic silicon, not any board below, so the number is real without
-being a claim about one of these ports. Read the ESP32-S3 and STM32F4
-entries below as a record of what each target needed last time, not as
-a claim about today; the Pico entry describes what builds now.
+being a claim about one of these ports. Read the ESP32-S3 entry below
+as a record of what it needed last time, not as a claim about today;
+the Pico and STM32F4 entries describe what builds now.
 
 ## ESP32-S3 (Espressif, Xtensa LX7)
 
@@ -61,30 +63,49 @@ a claim about today; the Pico entry describes what builds now.
 
 ## STM32F429I-DISC1 (STMicroelectronics, Cortex-M4F)
 
-- **Status:** Shipped at `v0.8.2-stm32f4-mandelbrot` (2026-05-17);
-  parked until its own tag. First non-RTOS port; bare-metal
-  `Reset_Handler` + custom linker script. Validated with a Mandelbrot
-  rendering workload on the 240×320 onboard ILI9341 LCD.
-- **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv7E-M Thumb-2 with
-  hardware FPU (`-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard`).
-- **Footprint:** ~110 KB liburbi.a text; ~140 KB bytecode-only.
-  STM32F429 ships with 2 MB flash + 256 KB SRAM (192 KB main + 64 KB
-  CCM).
+- **Status:** rebuilt on the current core at `v0.16.2-stm32f4`; builds
+  in CI (`cross-stm32f4`); board log pending, record in
+  [`../release/hardware-validation.md`](../release/hardware-validation.md).
+- **Toolchain and HAL:** xpack `arm-none-eabi-gcc` 14.2.1, STM32CubeF4
+  v1.28.2 (HAL + CMSIS + the DISC1 BSP + the ili9341/l3gd20 component
+  drivers; no CubeMX-generated code). The example links the
+  `arm-cortex-m4f` preset's bytecode-only shape
+  (`make cross-arm-cortex-m4f-bytecode-only`), 86,324 bytes
+  text+data+bss (`size --totals`, measured 2026-10-05).
+- **Shape of the example:** the component
+  (`components/stm32f4-hal-baremetal/`) gives a 128 KB arena in
+  internal SRAM through a bump-and-freelist allocator with its own
+  requested-bytes counter (`port_alloc_live_bytes`); `tools/bake-header.sh`
+  runs the host `urbi --dump-wire-format` on the workload at build
+  time and turns the blob into the C header `urbi_load` loads at boot;
+  the workload's main loop is a `detach`ed strand that renders,
+  reports the render in a `render:` console line, and `waituntil`s the
+  next trigger (a button press or a pan); `_Min_Stack_Size` in the
+  linker script is 16 KB, a link-time check only — the stack really
+  runs from `_estack` down to the end of `.bss`.
 - **Numeric:** Float values are always double (f64); the Cortex-M4F FPU
   is single-precision, so double arithmetic is in software.
-- **REPL transports:** None at v0.8.2 (pre-M8). Embedder drives
-  `urbi_step` from the main loop; output flows via the ILI9341.
-- **Build system:** Plain `arm-none-eabi-gcc` Makefile under
-  `examples/stm32f4-disc/`; no STM32CubeMX / CubeIDE / CMSIS layer
-  beyond hand-written reset + clock init.
-- **Idiosyncrasies:**
-  - The float layout is fixed (always f64), so there is no float-type
-    build flag to keep in step between the application and liburbi.a.
+- **Idiosyncrasies kept from the first bring-up:**
   - No DCache on the F429 (Cortex-M4F has no D-cache controller).
     Bytecode reads from flash are deterministically slow but
     predictable; no need for cache-coherency dances.
   - 64 KB CCM is unreachable by DMA — useful for the GC arena, not for
     the LCD framebuffer.
+  - The float layout is fixed (always f64), so there is no float-type
+    build flag to keep in step between the application and liburbi.a.
+  - The ILI9341's native surface is 320×240 landscape; the component's
+    `port_lcd_fill_rect_native` rotates every rectangle 90° so the
+    workload can address it as a 240×320 portrait surface
+    (`port_lcd.c`).
+- **SDRAM option:** the VM's heap can move to the 8 MB SDRAM at
+  `0xD0000000` by adding `-DURBI_HEAP_EXTERNAL_ADDR=0xD0080000UL
+  -DURBI_HEAP_BYTES=1048576UL` to the example's `DEFS`; not the
+  default, and slower than internal SRAM.
+- **Flashing:** `STM32_Programmer_CLI -c port=SWD -w
+  build/mandelbrot.bin 0x08000000 -rst` first (`make -C
+  examples/stm32f4/mandelbrot flash`); `st-flash --reset write
+  build/mandelbrot.bin 0x08000000` second (`make -C
+  examples/stm32f4/mandelbrot flash-stlink`).
 
 ## Raspberry Pi Pico (RP2040, Cortex-M0+)
 

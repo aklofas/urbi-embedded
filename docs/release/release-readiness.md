@@ -44,7 +44,7 @@
 | Linux x86_64 (host) | shipped | host-test matrix | n/a | n/a | continuously |
 | Raspberry Pi Pico | shipped; rebuilt on the current core and hardware-validated | `cross-pico-repl` | none automated | hardware-validation.md | 2026-10-05 (v0.16.1-pico) |
 | ESP32-S3 | parked until its own tag | retired target name; see `internals/ports.md` | qemu-smoke reactive | hardware-validation.md | 2026-05-16 (v0.7.2) |
-| STM32F4 | parked until its own tag | retired target name; see `internals/ports.md` | none automated | hardware-validation.md | 2026-05-17 (v0.8.2) |
+| STM32F4 | builds in CI (`cross-stm32f4`); board log pending | `cross-stm32f4`, `test-port-stm32f4` | none automated | hardware-validation.md | 2026-05-17 (v0.8.2) |
 | ARM Cortex-M7 | archive build (CI) | `cross-arm-cortex-m7` | none | n/a | n/a |
 | RISC-V rv32imc | archive build (CI) | `cross-riscv32` | none | n/a | n/a |
 | STM32H7 | **removed from v1.0 claims** | n/a | n/a | n/a | n/a |
@@ -59,7 +59,7 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 | Component manifest version sync | gated | `make check-version-sync` | **passing-evidence** — continuous (since v0.8) |
 | Stdlib bytecode freshness | **gated (W5)** | `make test-stdlib-bytecode-fresh` — passes | **passing-evidence** — regenerate-diff gate added v0.10.6; see `tests/scripts/check-stdlib-fresh.sh` |
 | Freestanding-host gate | gated | `make test-freestanding-host` | **passing-evidence** — continuous (since v0.9.3) |
-| Cross-target cooperative REPL gates | the Pico example builds on this core (`make pico-repl-demo`); ESP32-S3 / STM32F4 examples stay parked | `cross-pico-repl` (CI); see `internals/ports.md` | **manual procedure** — ESP32/STM32 hardware REPL validated at bring-up (shiptest H1/H2/H3); other targets out of v1.0 scope |
+| Cross-target cooperative REPL gates | the Pico and the STM32F4 examples build on this core (`make pico-repl-demo`, `make stm32f4-mandelbrot`); the ESP32-S3 example stays parked | `cross-pico-repl`, `cross-stm32f4` (CI); see `internals/ports.md` | **manual procedure** — ESP32/STM32 hardware REPL validated at bring-up (shiptest H1/H2/H3); other targets out of v1.0 scope |
 | Public doc scrub of workspace-private paths | gated | `make docs-check` w/ scrub check | **passing-evidence** — continuous |
 
 ## C API
