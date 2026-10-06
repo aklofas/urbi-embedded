@@ -76,7 +76,12 @@ static UAstNode *parse_tag_prefix_body(UParser *p, UAstNode *tag_expr,
     if (urbi_parse_peek(p).type == TOK_LBRACE) {
         body = urbi_parse_block(p);
     } else {
+        /* An unbraced body is one level of nesting against the depth
+         * budget, as a braced one is inside urbi_parse_block, so a
+         * `t: t: ... stmt` chain is refused before it recurses. */
+        if (!uparse_budget_enter(p)) return (UAstNode *)&uparser_oom_sentinel;
         UAstNode *stmt = urbi_parse_statement_or_expr(p);
+        uparse_budget_leave(p);
         if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
         if (stmt->kind == AST_ERROR) return stmt;
         /* Wrap in single-statement block so the emit path's AST_BLOCK
@@ -198,8 +203,12 @@ static UAstNode *parse_event_payload_binding(UParser *p,
 static UAstNode *parse_reactive_body(UParser *p) {
     if (urbi_parse_peek(p).type == TOK_LBRACE) return urbi_parse_block(p);
 
+    /* One level of the depth budget, the same as an unbraced if/while
+     * arm, so an `at (c) at (c) ... stmt` chain is refused too. */
     UToken pos = urbi_parse_peek(p);
+    if (!uparse_budget_enter(p)) return (UAstNode *)&uparser_oom_sentinel;
     UAstNode *stmt = urbi_parse_arm_stmt(p);
+    uparse_budget_leave(p);
     if (!stmt) return (UAstNode *)&uparser_oom_sentinel;
     if (stmt->kind == AST_ERROR) return stmt;
 

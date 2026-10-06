@@ -587,6 +587,30 @@ static void t_statement_nesting_counts_against_the_depth_budget(void)
     RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
           URBI_ERR_COMPILE_BUDGET_DEPTH);
 
+    /* An unbraced reactive-body chain: `at (1) at (1) ... 1`.  A short
+     * chain inside the budget still compiles. */
+    at = 0;
+    for (int i = 0; i < 40; i++) at += (size_t)snprintf(src + at, sizeof src - at, "at (1) ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_COMPILE_BUDGET_DEPTH);
+    at = 0;
+    for (int i = 0; i < 4; i++) at += (size_t)snprintf(src + at, sizeof src - at, "at (1) ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+
+    /* An unbraced tag-prefix chain: `t: t: ... 1`. */
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), "var t = Tag.new()", 17, NULL, &out, err, sizeof err), URBI_OK);
+    at = 0;
+    for (int i = 0; i < 40; i++) at += (size_t)snprintf(src + at, sizeof src - at, "t: ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err),
+          URBI_ERR_COMPILE_BUDGET_DEPTH);
+    at = 0;
+    for (int i = 0; i < 4; i++) at += (size_t)snprintf(src + at, sizeof src - at, "t: ");
+    (void)snprintf(src + at, sizeof src - at, "1");
+    RT_EQ(urbi_run(vm, urbi_realm_main(vm), src, strlen(src), NULL, &out, err, sizeof err), URBI_OK);
+
     /* No budget: the deep chains compile (the emitter's own 32-block
      * limit is a separate refusal and is not what this case is about). */
     urealm_set_budget(vm, urbi_realm_main(vm), NULL);
