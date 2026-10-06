@@ -10,6 +10,7 @@
 set -eu
 URBI=$1; IN=$2; OUT=$3; SYM=$4
 RAW="$OUT.uc"
+trap 'rm -f "$RAW"' EXIT
 "$URBI" --dump-wire-format "$IN" > "$RAW"
 len=$(wc -c < "$RAW" | tr -d ' ')
 if [ "$len" -eq 0 ]; then echo "bake-header: $IN produced no bytes" >&2; rm -f "$RAW"; exit 1; fi
