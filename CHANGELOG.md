@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.16.1-pico — 2026-10-DD
+## v0.16.1-pico — 2026-10-05
 
 The Raspberry Pi Pico example is rebuilt on the re-founded core: a
 hosted Cortex-M0+ archive, a host-baked boot workload, and the eval
@@ -72,8 +72,8 @@ format unchanged at v2.0 / `0x20`.
   `docs/embedded/footprint-tunables.md`, `docs/internals/build-system.md`,
   `docs/release/test-tiers.md`, `docs/README.md`, `README.md` and
   `CONTRIBUTING.md` updated to match: the Pico builds in CI
-  (`cross-pico-repl`) with its board log pending; ESP32-S3 and STM32F4
-  stay parked until their own tags.
+  (`cross-pico-repl`) and passed its board log on 2026-10-05; ESP32-S3
+  and STM32F4 stay parked until their own tags.
 - The eval service's framing cap (1 MiB, not configurable through
   `UReplConfig`) filed as a design risk.
 
@@ -87,7 +87,10 @@ format unchanged at v2.0 / `0x20`.
 | host session cost (64-bit) | boot 71,273 bytes; after the first session's close, 71,420; after the second, 71,420 (a reopen costs nothing further) |
 | 32-bit boot heap (qemu probe) | 48,980 bytes live in 994 blocks, unchanged by this tag; cap 49,152 |
 | runners | unit 584 cases / 0 failed (577 + 7 new); runtime (rt) 254 / 0 (252 + 2 new); corpus (chk) 369 / 0 |
-| board figures | pending the board log |
+| board: boot heap (`alloc live` after the first collection) | 48,980 bytes, byte-identical to the qemu probe; `gc live` 27,224; newlib break 65,780 |
+| board: session open / reopen | 52,131 bytes with the boot watchers alive; 50,411 after `boot.stop()`; a close and reopen lands on 50,411 again (0 bytes of drift) |
+| board: idle | five consecutive `idle:` lines over 150 s at 50,411 bytes; newlib's high-water mark settled at 94,836 bytes after the first compiles |
+| board build | the owner's bench toolchain (STM32CubeCLT `arm-none-eabi-gcc` 13.3.1 for both the archive and the firmware): text 234,640 / data 0 / bss 4,012 bytes; the xpack figures above are what CI builds |
 
 ## v0.16.0-shell — 2026-10-04
 

@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** tagged `v0.16.1-pico`: the Raspberry Pi Pico example is rebuilt on the re-founded core, with a hosted Cortex-M0+ archive, a baked boot workload, and the eval service serving sessions over USB CDC and UART0, all through one `make pico-repl-demo` target and a CI job (`cross-pico-repl`). The one C API addition, `urbi_event_value`, exists because the board's event-bound fixtures need to read back the value cell an interrupt-registered event id names, and no existing call did. ABI 0/28/0; wire v2.0 / 0x20 unchanged; the board log that closes the tag is still pending. The language is intact: separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally`. The parser does every desugar (32 AST kinds, down from 49) and the emitter is a single-cursor design with pinned temporaries, writing a bytecode format (41 opcodes, an `EXTARG` prefix for slot sites above 255) that the unwinder walks directly to run `finally` bodies on both the normal path and a jump.
+**Status:** tagged `v0.16.1-pico`: the Raspberry Pi Pico example is rebuilt on the re-founded core, with a hosted Cortex-M0+ archive, a baked boot workload, and the eval service serving sessions over USB CDC and UART0, all through one `make pico-repl-demo` target and a CI job (`cross-pico-repl`). The one C API addition, `urbi_event_value`, exists because the board's event-bound fixtures need to read back the value cell an interrupt-registered event id names, and no existing call did. ABI 0/28/0; wire v2.0 / 0x20 unchanged; the board log closed the tag on 2026-10-05 (boot heap 48,980 bytes on the part, identical to the qemu probe; a session reopens with zero drift). The language is intact: separators-encode-concurrency (`;` `|` `,` `&`), the reactive trio (`at` / `whenever` / `waituntil`), first-class tags with `stop` / `block` / `freeze`, prototype OOP, and `try` / `catch` / `finally`. The parser does every desugar (32 AST kinds, down from 49) and the emitter is a single-cursor design with pinned temporaries, writing a bytecode format (41 opcodes, an `EXTARG` prefix for slot sites above 255) that the unwinder walks directly to run `finally` bodies on both the normal path and a jump.
 
 ## 30-second quickstart
 
@@ -33,7 +33,7 @@ Embedding a VM in your own C program is one header and a handful of calls — th
 | Target | Status | Note |
 |---|---|---|
 | Linux x86_64 (host) | shipped | the canonical development target; the whole CI matrix runs here |
-| Raspberry Pi Pico (RP2040 / Cortex-M0+) | builds (CI) — board log pending | rebuilt on the re-founded core; the owner's hardware run closes the tag |
+| Raspberry Pi Pico (RP2040 / Cortex-M0+) | shipped (`v0.16.1-pico`) | rebuilt on the re-founded core and hardware-validated 2026-10-05 (eval service over USB CDC and UART0) |
 | ESP32-S3 (Xtensa LX7) | parked | brought up and hardware-validated (eye_demo); re-attached at its own tag |
 | STM32F4 (Cortex-M4F) | parked | brought up and hardware-validated (Mandelbrot demo); re-attached at its own tag |
 | ARM Cortex-M7 (generic) | archive build (CI) | cross-compiled, archive-gated, and footprint-measured on every push; no board attached |
@@ -49,8 +49,8 @@ Cortex-M4 model, where a booted VM now measures 48,980 bytes and an idle
 strand 466 bytes: the 32-bit figure this page used to promise for later
 is measured for real. All three real boards above were brought up and hardware-validated
 against a runtime this core has since replaced. The Pico has now been
-rebuilt on the current core, pending its own board log; ESP32-S3 and
-STM32F4 have not been rebuilt yet, and each returns at its own tag.
+rebuilt on the current core and validated on the board again; ESP32-S3
+and STM32F4 have not been rebuilt yet, and each returns at its own tag.
 
 ## Build
 

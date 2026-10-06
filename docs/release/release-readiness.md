@@ -42,7 +42,7 @@
 | Target | Status | CI gate | Runtime smoke | Hardware evidence | Last verified |
 |---|---|---|---|---|---|
 | Linux x86_64 (host) | shipped | host-test matrix | n/a | n/a | continuously |
-| Raspberry Pi Pico | builds in CI (`cross-pico-repl`); board log pending | `cross-pico-repl` | none automated | hardware-validation.md | 2026-05-24 (v0.9.4) |
+| Raspberry Pi Pico | shipped; rebuilt on the current core and hardware-validated | `cross-pico-repl` | none automated | hardware-validation.md | 2026-10-05 (v0.16.1-pico) |
 | ESP32-S3 | parked until its own tag | retired target name; see `internals/ports.md` | qemu-smoke reactive | hardware-validation.md | 2026-05-16 (v0.7.2) |
 | STM32F4 | parked until its own tag | retired target name; see `internals/ports.md` | none automated | hardware-validation.md | 2026-05-17 (v0.8.2) |
 | ARM Cortex-M7 | archive build (CI) | `cross-arm-cortex-m7` | none | n/a | n/a |

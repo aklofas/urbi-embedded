@@ -9,12 +9,12 @@
 
 ## Raspberry Pi Pico (RP2040 / Cortex-M0+)
 
-### 2026-10-DD — v0.16.1-pico (board log pending)
+### 2026-10-05 — v0.16.1-pico
 
 - **Board:** Raspberry Pi Pico (RP2040, dual Cortex-M0+, no FPU, no divide unit).
-- **Toolchain:** xpack-arm-none-eabi-gcc 14.2.1.
+- **Toolchain:** the bench machine's STM32CubeCLT `arm-none-eabi-gcc` 13.3.1 for both the archive and the firmware (CI builds the same sources with xpack 14.2.1).
 - **SDK:** pico-sdk 2.2.0.
-- **Firmware artifact:** `examples/pico/repl_demo/build/repl_demo.uf2` (552,960 B).
+- **Firmware artifact:** `examples/pico/repl_demo/build/repl_demo.uf2` built by `make pico-repl-demo` from branch head `24d71619`; `repl_demo.elf` text 234,640 / data 0 / bss 4,012 B (552,960 B `.uf2` and 280,384 B text with xpack).
 - **Smoke steps:**
   1. Boot heap: the `boot heap:` line shows `alloc live` under 49,152 B.
   2. Three evals: `echo("hi")` prints and returns `nil`; `1+1` returns `2`; `temp_celsius()` returns a float.
@@ -22,8 +22,38 @@
   4. Periodic print: a one-second `every` tag prints a temperature once a second, then stops on `t.stop()`.
   5. Session reopen: the `session open:` line's `alloc live` is within 1,024 B across a close and reopen.
   6. Idle: two `idle:` lines 30 s apart show the same `alloc live`.
-- **Observed output:** pending: the owner's picocom log is pasted here and closes the tag.
-- **Verifier:** the owner.
+- **Observed output** (picocom on `/dev/ttyACM0`, condensed; the board's own lines verbatim):
+
+  ```text
+  === urbi 0.16.1-pico on Raspberry Pi Pico ===
+  [1] urbi_open... ok
+  boot heap: alloc live 48980 B, gc live 27224 B, heap break 65780 B, budget 170100 B, cycles 2
+  [2] fixtures... ok
+  [3] workload... ok
+  [4] eval service... ok
+  [5] tick... ok
+  ready: alloc live 51899 B, gc live 28643 B, heap break 68468 B, budget 170100 B, cycles 3
+  {"kind":"output","channel":"console","msg":"session open: alloc live 52131 B, gc live 28875 B, heap break 68468 B, budget 170100 B, cycles 4\r\n"}
+  {"id":1,"kind":"output","channel":"clog","msg":"[00035952] *** hi\n"}
+  {"id":1,"kind":"result","value":"nil"}
+  {"id":2,"kind":"result","value":"2"}
+  {"id":3,"kind":"result","value":"22.457083454000"}
+  {"id":4,"kind":"result","value":"nil"}            boot.stop(); BOOTSEL no longer toggles the LED
+  {"id":5,"kind":"result","value":"nil"}            at (pressed?) led_toggle(); BOOTSEL toggles it on each press
+  {"id":6,"kind":"result","value":"nil"}
+  {"kind":"output","channel":"clog","msg":"[00097306] *** 22.457083454000\n"}
+  {"kind":"output","channel":"clog","msg":"[00098305] *** 22.457083454000\n"}   ... once a second, 14 lines ...
+  {"id":7,"kind":"result","value":"nil"}            t.stop(); no further lines
+  {"kind":"output","channel":"console","msg":"idle: alloc live 51578 B, ..."}
+  (picocom closed and reopened)
+  {"kind":"output","channel":"console","msg":"session open: alloc live 50411 B, gc live 28655 B, heap break 94836 B, budget 170100 B, cycles 13\r\n"}
+  {"kind":"output","channel":"console","msg":"idle: alloc live 50411 B, ... cycles 14\r\n"}   ... five idle lines, 30 s apart, all 50411 ...
+  (picocom closed and reopened again)
+  {"kind":"output","channel":"console","msg":"session open: alloc live 50411 B, gc live 28655 B, heap break 94836 B, budget 170100 B, cycles 20\r\n"}
+  ```
+
+  Items 1 to 6 all pass: boot heap 48,980 B (identical to the qemu Cortex-M4 probe); the three evals answer as listed (the Float prints with twelve fixed decimals because pico-sdk's printf renders `%g` that way, unlike the host); the LED follows the session's watcher once the boot tag is stopped; the periodic prints at 1,000 ms spacing and stops; a close and reopen lands on the same 50,411 B (the first session's 52,131 B included the two boot watchers that `boot.stop()` freed); five idle readings over 150 s show no growth, with newlib's high-water mark flat at 94,836 B.
+- **Verifier:** aklofas.
 
 ### 2026-05-24 — v0.9.4-pico-example
 

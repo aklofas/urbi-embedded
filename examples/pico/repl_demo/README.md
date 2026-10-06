@@ -154,9 +154,9 @@ An AST node is 56 bytes, so 1,000 nodes is a 56 KB transient at worst, which the
 | Hosted Cortex-M0+ `liburbi.a`, text+data+bss | 146,823 B |
 | Firmware `repl_demo.elf`, text / data / bss | 280,384 / 0 / 4,428 B |
 | Firmware `repl_demo.uf2` | 552,960 B |
-| Boot heap (board) | from the board log |
-| Session open (board) | from the board log |
-| Idle growth (board) | from the board log |
+| Boot heap (board, 2026-10-05) | `alloc live` 48,980 B, the same as the qemu probe |
+| Session open (board) | 52,131 B with the boot watchers alive; 50,411 B after `boot.stop()`, and 50,411 B again after a close and reopen |
+| Idle growth (board) | none: five `idle:` lines over 150 s at 50,411 B; newlib's high-water mark flat at 94,836 B |
 
 The firmware's initialized data is counted under text by `arm-none-eabi-size`, because the SDK's `.data` section carries code flags.
 

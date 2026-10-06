@@ -89,10 +89,10 @@ a claim about today; the Pico entry describes what builds now.
 ## Raspberry Pi Pico (RP2040, Cortex-M0+)
 
 - **Status:** rebuilt on the current core at `v0.16.1-pico`; builds in
-  CI (`cross-pico-repl`); the board log that closes the tag is
-  recorded in
-  [`../release/hardware-validation.md`](../release/hardware-validation.md)
-  once the owner runs it.
+  CI (`cross-pico-repl`); hardware-validated 2026-10-05 (boot heap
+  48,980 B on the part, a session reopening with zero drift, 150 s idle
+  flat), log in
+  [`../release/hardware-validation.md`](../release/hardware-validation.md).
 - **Toolchain and SDK:** xpack `arm-none-eabi-gcc` 14.2.1, pico-sdk
   2.2.0 (TinyUSB 0.18), the `arm-cortex-m0plus` preset in its hosted
   shape (`make cross-arm-cortex-m0plus-hosted`, 146,823 B
