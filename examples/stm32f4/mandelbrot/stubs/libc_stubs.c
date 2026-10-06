@@ -2,6 +2,7 @@
  *
  * Provides the few libc symbols that the HAL + urbi library pull in:
  *   memset, memcpy, memmove, strlen — used by HAL and liburbi.a
+ *   memcmp, strcmp                 — used by liburbi.a
  *   __libc_init_array             — called by startup_stm32f429xx.s
  *
  * None of these call into the OS or allocate heap. */
@@ -55,6 +56,14 @@ int memcmp(const void *a, const void *b, size_t n)
         pa++; pb++;
     }
     return 0;
+}
+
+int strcmp(const char *a, const char *b)
+{
+    const unsigned char *pa = (const unsigned char *)a;
+    const unsigned char *pb = (const unsigned char *)b;
+    while (*pa && *pa == *pb) { pa++; pb++; }
+    return (int)*pa - (int)*pb;
 }
 
 /* ---- __libc_init_array ---- */
