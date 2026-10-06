@@ -72,6 +72,14 @@ CHANGELOG, not capped. `cross-all` and `test-cross-missing-toolchain`
 are in `releasetest`; CI runs each preset's two shapes in its `cross`
 matrix.
 
+The flag stamp that invalidates a build directory carries the compiler's
+resolved path and version as well as its name, so a second toolchain
+reached through the same `arm-none-eabi-gcc` name rebuilds every object
+instead of leaving one compiler's archive to be linked by another;
+`test-flagstamp-toolchain` (in `releasetest`) pins it. `make
+pico-repl-demo` hands pico-sdk the directory of the compiler the preset
+resolved, so the firmware and the archive always come from one toolchain.
+
 ## Stdlib bake (M6 Wave 2)
 
 The standard library ships as a hybrid:

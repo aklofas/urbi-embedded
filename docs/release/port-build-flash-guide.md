@@ -48,6 +48,7 @@ echo "1 + 2" | ./build/host/urbi -i      # -> [..........] 3
 
 ```sh
 make pico-repl-demo            # host urbi + hosted Cortex-M0+ archive + CMake build
+# both built by the arm-none-eabi-gcc first on PATH; CMAKE=... picks the cmake
 # -> examples/pico/repl_demo/build/repl_demo.uf2
 ```
 

@@ -32,6 +32,8 @@ make test
   bytecode-only shape as it builds; `test-cross-missing-toolchain`
   checks the failure mode for a preset whose compiler is absent. A
   preset's toolchain not being on `PATH` is a hard error, not a skip.
+  `test-flagstamp-toolchain` checks that a different compiler behind the
+  same name rebuilds the archive.
 
 `make test-probes-32bit` (the qemu Cortex-M4 memory probes) is CI-only —
 it needs `arm-none-eabi-gcc` and `qemu-system-arm`, neither of which

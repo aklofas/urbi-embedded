@@ -10,7 +10,7 @@ The boot workload is [`repl_demo.u`](repl_demo.u); it is compiled on the host at
 
 Prerequisites:
 
-- xpack `arm-none-eabi-gcc` 14.2.1 on `PATH`.
+- An `arm-none-eabi-gcc` on `PATH`. The archive and the firmware are both built by the one found first, and `make pico-repl-demo` points pico-sdk at that same compiler. CI installs xpack 14.2.1, and the sizes quoted in this file are from it; the STM32CubeCLT or Ubuntu toolchains build and run too, with a smaller image.
 - CMake 3.13 or later, and `make`.
 - pico-sdk 2.2.0, either at `PICO_SDK_PATH` or at `../tools/pico-sdk` beside the repository.
 - Network access for the first configure: pico-sdk fetches and builds `picotool` once.
@@ -23,6 +23,8 @@ make pico-repl-demo
 
 That one command builds the host `urbi` (which compiles `repl_demo.u` to bytecode), the hosted Cortex-M0+ `liburbi.a` (newlib present, so floats print), and then configures and builds this example with CMake.
 It ends by printing the firmware's `size` line.
+`CMAKE=/path/to/cmake` picks the CMake to run when the first one on `PATH` is a vendor IDE's.
+A `build/` directory configured with one toolchain is not reused with another: if CMake reports that the compiler changed, remove `examples/pico/repl_demo/build` and build again.
 
 Outputs, under `examples/pico/repl_demo/`:
 

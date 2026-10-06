@@ -167,7 +167,7 @@ an uninstrumented baseline would measure the instrumentation.
 | `make test-cache-verify` | `-O1 -g -DURBI_SLOT_CACHE_VERIFY=1` | `build/host-cache-verify/` | a slot-cache hit that disagrees with the uncached lookup |
 | `make test-o2` | `-O2 -g` | `build/host-o2/` | the level desktop embedders actually use |
 | `make test-bench` | `-Os` | `build/host/` | the timing probe, alone, on the baseline machine |
-| `make releasetest` | all of the above except `test-bench`, plus `cross-all` and `test-cross-missing-toolchain`: 24 gates in parallel, then 2 alone | — | before a tag |
+| `make releasetest` | all of the above except `test-bench`, plus `cross-all`, `test-cross-missing-toolchain` and `test-flagstamp-toolchain`: 25 gates in parallel, then 2 alone | — | before a tag |
 
 Build directories are disjoint, so the parallel sweep does not race.
 
