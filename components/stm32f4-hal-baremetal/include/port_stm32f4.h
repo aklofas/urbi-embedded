@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* STM32F4 bare-metal port glue — function prototypes for urbi <-> STM32CubeF4 BSP integration.
  *
- * Embedders include this header from their main.c and pass the wrappers below
- * into the corresponding urbi register / init hooks (urbi_vm_init,
- * urbi_set_writer, urbi_set_clock_fn, urbi_set_diag_fn, ...).
- *
- * Each wrapper has a signature compatible with the urbi public hook typedef
- * it satisfies (UVMAllocFn, urbi_writer_fn, urbi_native_method_fn, ...).
- * See include/urbi/types.h and include/urbi/urbi.h for canonical typedefs.
+ * Embedders include this header from their main.c and hand the functions
+ * below to the urbi host hooks: port_alloc to urbi_open, port_time_us to
+ * urbi_set_clock, port_writer to urbi_set_writer, port_diag to
+ * urbi_set_diag, and the natives to urbi_register.  Each one's signature
+ * matches the hook it satisfies (see include/urbi/urbi.h and
+ * include/urbi/types.h for the canonical typedefs).
  *
  * Target board: STM32F429I-DISC1 (Cortex-M4F, 180 MHz, 256 KB SRAM, 8 MB SDRAM,
  * 2.4" 240x320 RGB565 LCD via LTDC/ILI9341, L3GD20 gyro via SPI5,
@@ -18,90 +17,100 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
-#include "urbi/types.h"   /* UValue, struct UVM (opaque), UVMAllocFn */
+#include "urbi/types.h"   /* UValue, struct UVM (opaque), UVMAllocFn, urbi_event_id_t */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* struct UVM is forward-declared in <urbi/types.h> */
-
 /* Compile-time tunables: override via -D... at build time. */
 #ifndef URBI_HEAP_BYTES
-#  define URBI_HEAP_BYTES  (80U * 1024U)
+#  define URBI_HEAP_BYTES  (128U * 1024U)
 #endif
 
-/* Allocator: static .bss heap carved from internal SRAM.  Signature matches
- * UVMAllocFn (include/urbi/types.h) — pass as the alloc_fn parameter to
- * urbi_vm_init.  The heap is statically sized at URBI_HEAP_BYTES (default
- * 80 KB). */
+/* Allocator over a static heap of URBI_HEAP_BYTES (default 128 KB).
+ * Realloc-shaped, matching UVMAllocFn: pass it to urbi_open. */
 void *port_alloc(void *ptr, size_t nbytes, void *ud);
 
-/* Monotonic-microseconds time source.  Signature matches urbi_time_us_fn
- * (include/urbi/urbi.h) — pass to urbi_set_clock_fn.  Backed by the DWT
- * cycle counter at 180 MHz; resolution is 1 cycle (~5.5 ns), wraps at
- * uint64_t (~73 years). */
+/* Requested bytes outstanding: what callers asked for and still hold,
+ * header overhead excluded.  The figure the 48 KB target caps. */
+size_t port_alloc_live_bytes(void);
+
+/* Bump high-water mark in bytes, header overhead included. */
+size_t port_alloc_heap_top(void);
+
+/* Arena size in bytes (URBI_HEAP_BYTES). */
+size_t port_alloc_heap_size(void);
+
+/* Number of successful allocations since boot. */
+size_t port_alloc_count(void);
+
+/* Number of frees since boot. */
+size_t port_alloc_free_count(void);
+
+/* Number of allocations served from the freelist instead of the bump. */
+size_t port_alloc_freelist_hits(void);
+
+/* Block size (header included) of the last request the arena refused. */
+size_t port_alloc_last_failed_request(void);
+
+/* Monotonic microseconds from the DWT cycle counter at 180 MHz, widened
+ * to 64 bits.  The clock hook: pass to urbi_set_clock. */
 uint64_t port_time_us(void *ud);
 
-/* Channel-dispatching writer over USART1 (ST-Link VCP).  Signature matches
- * urbi_writer_fn (include/urbi/urbi.h) — pass to urbi_set_writer.  All
- * channels route to USART1; the channel name is printed as a prefix
- * (e.g. "[cerr] message\n"). */
-void port_writer(void *ud,
-                 const char *channel, size_t channel_len,
-                 const char *msg,     size_t msg_len,
-                 uint64_t ts_us);
+/* Script output over USART1 as "[chan] msg".  The writer hook: pass to
+ * urbi_set_writer. */
+void port_writer(void *ud, const char *chan, size_t chan_len,
+                 const char *msg, size_t msg_len);
 
-/* ISR-context predicate.  Signature matches bool (*)(void *) accepted by
- * urbi_set_isr_check_fn(vm, fn, ud).  Backed by __get_IPSR() != 0. */
-bool port_in_isr(void *ud);
+/* Runtime diagnostics over USART1 with a [D]/[I]/[W]/[E] prefix chosen
+ * from the syslog level.  The diag hook: pass to urbi_set_diag. */
+void port_diag(struct UVM *vm, void *ud, int level, const char *msg, size_t len);
 
-/* Runtime diagnostic channel routed to USART1 via port_writer.  Signature
- * matches urbi_diag_fn (include/urbi/urbi.h) — pass to urbi_set_diag_fn.
- * Levels: URBI_LOG_DEBUG/INFO/WARN/ERROR printed with [D]/[I]/[W]/[E]
- * prefix.  vsnprintf into a 192-byte stack buffer; truncates silently. */
-void port_diag(struct UVM *vm, void *ud, int level, const char *fmt, ...);
-
-/* USART1 init: 115200 8N1 on PA9 (TX) / PA10 (RX), routed to ST-Link VCP.
- * Call once from main() before the urbi VM is created. */
+/* USART1 init: 115200 8N1 on PA9 (TX) / PA10 (RX), routed to the
+ * ST-Link VCP.  Call once from main() before the VM is opened. */
 void port_uart_init(void);
 
-/* LCD init: brings up LTDC + ILI9341 + framebuffer in SDRAM at 0xD0000000.
- * Call once from main() AFTER BSP_SDRAM_Init().  Wraps the BSP sequence. */
+/* Raw, blocking write of `n` bytes to USART1; the shim's own console. */
+void port_uart_write(const char *s, size_t n);
+
+/* LCD init: LTDC + ILI9341 with one layer in SDRAM at 0xD0000000.  Call
+ * once from main() after BSP_SDRAM_Init(). */
 void port_lcd_init(void);
 
-/* LCD host-fn: registered into urbi as "lcd_fill_rect".  Signature matches
- * urbi_native_method_fn (include/urbi/urbi.h).  Fills an axis-aligned
- * rectangle at (x, y) of size (w, h) with the given RGB565 color via
- * BSP_LCD_FillRect.  Clamps to LCD bounds. */
+/* Native lcd_fill_rect(x, y, w, h, rgb565) on a 320x240 landscape
+ * canvas, clamped to the screen.  Register with exactly five arguments. */
 int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
                               UValue *args, uint8_t nargs, UValue *out);
 
-/* Gyro init: brings up L3GD20 over SPI5 via BSP_GYRO_Init.  Call once
- * from main() AFTER HAL_Init(). */
+/* Gyro init: L3GD20 over SPI5 via BSP_GYRO_Init.  Call once from main()
+ * after HAL_Init(). */
 void port_gyro_init(void);
 
-/* Gyro host-fns: registered into urbi as "gyro_x", "gyro_y", "gyro_z".
- * Signature matches urbi_native_method_fn.  Each reads the L3GD20 once
- * via BSP_GYRO_GetXYZ and returns the requested axis in radians/sec
- * as a UVAL_FLOAT.  Reading 3 axes = 3 SPI transactions; acceptable for
- * the demo's 50ms tick (60 reads/sec is well under L3GD20's 800 Hz max). */
+/* Native gyro_x(): one L3GD20 read, the X axis as a float.  Register
+ * with no arguments. */
 int port_gyro_x_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                        UValue *out);
+
+/* Native gyro_y(): one L3GD20 read, the Y axis as a float.  Register
+ * with no arguments. */
 int port_gyro_y_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                        UValue *out);
+
+/* Native gyro_z(): one L3GD20 read, the Z axis as a float.  Register
+ * with no arguments. */
 int port_gyro_z_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
                        UValue *out);
 
-/* Button GPIO init: configures PA0 as input with EXTI0 rising-edge IRQ.
- * Call BEFORE port_button_init(). */
+/* USER button GPIO: PA0 as input with a rising-edge EXTI0 interrupt. */
 void port_button_init_gpio(void);
 
-/* Button event binding: associates the EXTI0 ISR with a urbi event ID
- * (returned by urbi_event_register).  After this call, every USER button
- * press emits the event into the urbi event ring from ISR context. */
-void port_button_init(struct UVM *vm, uint32_t event_id);
+/* Bind the button to a VM and an event id from urbi_event_register; the
+ * EXTI0 handler injects this id on every press. */
+void port_button_bind(struct UVM *vm, urbi_event_id_t id);
+
+/* Call from EXTI0_IRQHandler: injects the bound event, if any. */
+void port_button_exti_handler(void);
 
 #ifdef __cplusplus
 }

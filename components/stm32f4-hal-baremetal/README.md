@@ -33,4 +33,5 @@ the urbi register hooks.
 | CCM    | 0x10000000 | 64 KB  | reserved                          |
 | SDRAM  | 0xD0000000 | 8 MB   | framebuffer + spare               |
 
-`urbi_heap` carved at `URBI_HEAP_BYTES` (default 80 KB) from SRAM1.
+`urbi_heap` carved at `URBI_HEAP_BYTES` (default 128 KB) from the contiguous
+192 KB SRAM region (SRAM1-3) the linker script maps as `RAM`.

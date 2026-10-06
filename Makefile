@@ -625,6 +625,25 @@ test-chk-runner:
 test-freestanding-host:
 	@sh tests/scripts/build-freestanding-host.sh
 
+# The STM32F4 component's host-runnable tests: the allocator and the
+# DWT time source compiled with the host compiler against a mock of the
+# two BSP symbols they touch.  The LCD, gyro, button, writer and diag
+# adapters have no honest host test; the board gate is theirs.
+PORT_STM32F4_DIR  := components/stm32f4-hal-baremetal
+PORT_STM32F4_TESTS := test_port_allocator test_port_time
+.PHONY: test-port-stm32f4
+test-port-stm32f4:
+	@mkdir -p build/port_stm32f4
+	@for t in $(PORT_STM32F4_TESTS); do \
+	    src=port_allocator.c; [ "$$t" = test_port_time ] && src=port_time.c; \
+	    $(CC) -std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PORT_TEST=1 \
+	        -Iinclude -I$(PORT_STM32F4_DIR)/include -Itests/port_stm32f4 \
+	        tests/port_stm32f4/$$t.c tests/port_stm32f4/mock_bsp.c $(PORT_STM32F4_DIR)/src/port/$$src \
+	        -o build/port_stm32f4/$$t || exit 1; \
+	    build/port_stm32f4/$$t || exit 1; \
+	done
+	@echo "PASS: STM32F4 port host tests"
+
 # `make test`: the frontend runner, the runtime runner, the layering
 # gate, the .chk corpus driven through the urbi binary, and the two shell
 # harnesses that cover what the corpus cannot see -- the REPL smoke run
@@ -802,7 +821,7 @@ RELEASETEST_PHASE1 := \
     test-wire-format-determinism \
     test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
-    test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 test-embedding-guide \
+    test-chk-runner test-freestanding-host test-port-stm32f4 test-fuzz-smoke test-o2 test-embedding-guide \
     cross-all test-cross-missing-toolchain test-flagstamp-toolchain
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory

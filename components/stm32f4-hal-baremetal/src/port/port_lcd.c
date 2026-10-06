@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* LCD wrapper for STM32F429I-DISC1 — exposes BSP_LCD_FillRect as the
- * lcd_fill_rect(x, y, w, h, color_rgb565) host-fn.
+ * lcd_fill_rect(x, y, w, h, color_rgb565) native.  The runtime enforces
+ * the five-argument arity it is registered with.
  *
  * Clamps coordinates to the visible 320x240 frame to avoid out-of-bounds
  * writes from urbi script (which may otherwise corrupt SDRAM regions
@@ -14,12 +15,8 @@
 #include "urbi/types.h"
 #include <stdint.h>
 
-#ifdef URBI_PORT_TEST
-#  include "mock_bsp.h"
-#else
-#  include "stm32f429i_discovery_lcd.h"
-#  include "stm32f429i_discovery_sdram.h"
-#endif
+#include "stm32f429i_discovery_lcd.h"
+#include "stm32f429i_discovery_sdram.h"
 
 /* Physical LCD on STM32F429I-DISC1 is portrait 240×320 (BSP_LCD_GetXSize
  * = 240, GetYSize = 320).  The mandelbrot urbiscript assumes a landscape
@@ -38,22 +35,16 @@
 #define LCD_H      240   /* logical (landscape) */
 
 void port_lcd_init(void) {
-#ifndef URBI_PORT_TEST
     BSP_LCD_Init();
     BSP_LCD_LayerDefaultInit(0, 0xD0000000UL);
     BSP_LCD_SelectLayer(0);
     BSP_LCD_DisplayOn();
     BSP_LCD_Clear(LCD_COLOR_BLACK);
-#endif
 }
 
 int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
                               UValue *args, uint8_t nargs, UValue *out) {
-    (void)vm; (void)self;
-    if (nargs != 5) {
-        *out = urbi_make_nil();
-        return -1;  /* URBI_EXEC_ERR_ARITY */
-    }
+    (void)vm; (void)self; (void)nargs;
     int32_t x = (int32_t)urbi_value_as_int(args[0]);
     int32_t y = (int32_t)urbi_value_as_int(args[1]);
     int32_t w = (int32_t)urbi_value_as_int(args[2]);
@@ -69,7 +60,7 @@ int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
     /* Reject degenerate rectangles */
     if (w <= 0 || h <= 0) {
         *out = urbi_make_nil();
-        return 0;
+        return UEXEC_OK;
     }
 
     /* BSP_LCD_SetTextColor expects ARGB8888 (top byte = alpha).  The urbi
@@ -96,8 +87,8 @@ int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
     int32_t ph = w;
     if (px < 0) { pw += px; px = 0; }
     if (py < 0) { ph += py; py = 0; }
-    if (pw <= 0 || ph <= 0) { *out = urbi_make_nil(); return 0; }
+    if (pw <= 0 || ph <= 0) { *out = urbi_make_nil(); return UEXEC_OK; }
     BSP_LCD_FillRect((uint16_t)px, (uint16_t)py, (uint16_t)pw, (uint16_t)ph);
     *out = urbi_make_nil();
-    return 0;
+    return UEXEC_OK;
 }
