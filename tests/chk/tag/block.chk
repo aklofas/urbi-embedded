@@ -1,7 +1,6 @@
 # Milestone: M3
 # Covers: t.block() pauses all strands tagged with t; t.unblock() resumes them;
 #         new strand started while tag is blocked also stays paused.
-# blocked: the ledger disagrees with the core on what block() does (REVIVAL §3 and legacy: stop running code and skip newcomers; the core and the shipped tag-state rows: a pause gate released by unblock) — awaiting an owner ruling
 # matrix-row: tag-block
 #
 # Host-driver form, so the tag is declared in its own `run` and the clock
