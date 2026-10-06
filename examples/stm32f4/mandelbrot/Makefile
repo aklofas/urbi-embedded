@@ -2,7 +2,8 @@
 #
 # Standard targets:
 #   make             — build build/mandelbrot.{elf,bin} (incremental)
-#   make flash       — build (if needed) + openocd-flash the board
+#   make flash       — build (if needed) + flash via STM32_Programmer_CLI
+#   make flash-stlink — build (if needed) + flash via st-flash
 #   make debug       — flash + start openocd gdbserver + arm-none-eabi-gdb
 #   make clean       — remove build/ and mandelbrot_baked.h
 #   make distclean   — also rebuild liburbi.a from scratch
@@ -13,38 +14,35 @@ OBJDIR     := $(BUILD)/obj
 
 # Repo paths (relative to this Makefile's directory)
 URBI_ROOT  := ../../..
-HAL_ROOT   := ../../../../tools/stm32cube-f4
+HAL_ROOT   ?= $(abspath ../../../../tools/stm32cube-f4)
 HAL_INC    := $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Inc
 HAL_SRC    := $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src
 BSP_DIR    := $(HAL_ROOT)/Drivers/BSP/STM32F429I-Discovery
 CMP_DIR    := $(HAL_ROOT)/Drivers/BSP/Components
 
-# Toolchain
-CC         := arm-none-eabi-gcc
-OBJC       := arm-none-eabi-objcopy
-SIZE       := arm-none-eabi-size
+# Toolchain: CC is normally handed down resolved by the top-level
+# `stm32f4-mandelbrot` target; a direct `make` here falls back to PATH.
+# OBJC/SIZE are derived from CC's own directory and prefix so the whole
+# toolchain comes from one place even when CC is an absolute path.
+CC         ?= arm-none-eabi-gcc
+TOOLDIR    := $(dir $(shell command -v $(CC)))
+OBJC       := $(TOOLDIR)arm-none-eabi-objcopy
+SIZE       := $(TOOLDIR)arm-none-eabi-size
 GDB        := arm-none-eabi-gdb
 
 # Target flags
 MCU        := -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
 
-# Heap: 1 MB in external SDRAM at 0xD0080000 (clear of the 150 KB framebuffer
-# at the SDRAM base 0xD0000000).
-#
-# URBI_FLOAT_TYPE=4 MUST match the URBI_FLOAT_TYPE the linked liburbi.a was
-# built with (cross-stm32f4 → f32 / 4 bytes).  Mismatch is silent and brutal:
-# UValue.v.f changes size (4 vs 8 bytes), application-side urbi_make_float
-# writes the wrong layout, and v.f reads back as 0.0 in the runtime.
-# Diagnosed at v0.8.2 hardware bring-up via disasm of port_gyro.c showing
-# __aeabi_f2d + strd (8-byte store) where the runtime expected vstr.f32.
+# Heap: 128 KB internal SRAM arena (the component's default).
+# External heap: add -DURBI_HEAP_EXTERNAL_ADDR=0xD0080000UL -DURBI_HEAP_BYTES=1048576UL
+# to DEFS (the SDRAM controller is initialised before the first allocation
+# either way).
 DEFS       := -DSTM32F429xx -DUSE_HAL_DRIVER \
-              -DURBI_FLOAT_TYPE=4 \
-              -DURBI_HEAP_BYTES=1048576UL \
-              -DURBI_HEAP_EXTERNAL_ADDR=0xD0080000UL
+              -DURBI_BYTECODE_ONLY=1 \
+              -DURBI_HEAP_BYTES=131072UL
 
 INC        := -I. -Istubs \
               -I$(URBI_ROOT)/include \
-              -I$(URBI_ROOT)/src \
               -I$(URBI_ROOT)/components/stm32f4-hal-baremetal/include \
               -I$(HAL_INC) \
               -I$(HAL_ROOT)/Drivers/CMSIS/Device/ST/STM32F4xx/Include \
@@ -53,8 +51,12 @@ INC        := -I. -Istubs \
               -I$(CMP_DIR)/ili9341 \
               -I$(CMP_DIR)/l3gd20
 
-CFLAGS     := -std=c99 -Wall -Wextra -Os -g $(MCU) -ffreestanding \
+# The project's own files compile strict; HAL/BSP/CMSIS sources only get
+# the plain warnings (vendor code, not ours to make -Wpedantic-clean).
+COMMON_CFLAGS := -std=c99 -Os -g $(MCU) -ffreestanding \
               -ffunction-sections -fdata-sections -MMD -MP $(DEFS) $(INC)
+APP_CFLAGS := $(COMMON_CFLAGS) -Wall -Wextra -Wpedantic -Werror
+HAL_CFLAGS := $(COMMON_CFLAGS) -Wall -Wextra
 ASFLAGS    := $(MCU)
 LDSCRIPT   := STM32F429ZITx_FLASH.ld
 LDFLAGS    := $(MCU) -T$(LDSCRIPT) -Wl,--gc-sections -Wl,-Map=$(BUILD)/$(TARGET).map \
@@ -85,10 +87,14 @@ BSP_C      := $(addprefix $(BSP_DIR)/, \
 SYS_C      := $(HAL_ROOT)/Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/system_stm32f4xx.c
 STARTUP_S  := $(HAL_ROOT)/Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/gcc/startup_stm32f429xx.s
 
-ALL_C      := $(APP_C) $(PORT_C) $(HAL_C) $(BSP_C) $(SYS_C)
+# APP_C last: under a serial build, a failure in our own code (e.g. a
+# retired API main.c hasn't caught up with yet) still lets every other
+# source get a compile attempt instead of stopping the run on the first
+# prerequisite in the list.
+ALL_C      := $(PORT_C) $(HAL_C) $(BSP_C) $(SYS_C) $(APP_C)
 ALL_S      := $(STARTUP_S)
 
-URBI_LIB   := $(URBI_ROOT)/build/arm-cortex-m4/liburbi.a
+URBI_LIB   := $(URBI_ROOT)/build/arm-cortex-m4f-bytecode-only/liburbi.a
 
 # --- Object files: one per source under $(OBJDIR)/ using basename only ---
 # Assumes basenames are unique across the full source set (HAL has no
@@ -106,13 +112,22 @@ DEP        := $(OBJ_C:.o=.d)
 # --- Default + phony targets ---------------------------------------------
 
 .DEFAULT_GOAL := all
-.PHONY: all flash debug clean distclean
+.PHONY: all flash flash-stlink debug clean distclean
 
-all: $(BUILD)/$(TARGET).bin
+all: check-hal-root $(BUILD)/$(TARGET).bin
+
+# Fails loudly before anything is built if HAL_ROOT doesn't point at a
+# real STM32CubeF4 checkout, rather than letting the compiler report a
+# missing-header error for every HAL/BSP source in turn.
+.PHONY: check-hal-root
+check-hal-root:
+	@test -f $(HAL_INC)/stm32f4xx_hal.h || { echo "mandelbrot: no STM32CubeF4 at $(HAL_ROOT) (set HAL_ROOT)"; exit 1; }
 
 flash: $(BUILD)/$(TARGET).bin
-	openocd -f board/stm32f429discovery.cfg \
-	        -c "program $< 0x08000000 verify reset exit"
+	STM32_Programmer_CLI -c port=SWD -w $(BUILD)/$(TARGET).bin 0x08000000 -rst
+
+flash-stlink: $(BUILD)/$(TARGET).bin
+	st-flash --reset write $(BUILD)/$(TARGET).bin 0x08000000
 
 debug: $(BUILD)/$(TARGET).elf
 	openocd -f board/stm32f429discovery.cfg &
@@ -138,11 +153,13 @@ $(BUILD)/$(TARGET).elf: $(OBJ) $(URBI_LIB) | $(BUILD)
 
 # --- Per-source compile rules via foreach + eval -------------------------
 
-# define a rule per .c source so make knows which path on disk to compile
+# define a rule per .c source so make knows which path on disk to compile;
+# the project's own files are listed in APP_C/PORT_C and get the strict
+# flags, everything else (HAL/BSP/CMSIS) gets the lenient ones.
 define _c_rule
 $$(OBJDIR)/$$(notdir $(1)).o: $(1) | $$(OBJDIR)
 	@echo "  CC     $$<"
-	@$$(CC) $$(CFLAGS) -c $$< -o $$@
+	@$$(CC) $(if $(filter $(1),$(APP_C) $(PORT_C)),$$(APP_CFLAGS),$$(HAL_CFLAGS)) -c $$< -o $$@
 endef
 $(foreach s,$(ALL_C),$(eval $(call _c_rule,$(s))))
 
@@ -159,22 +176,17 @@ $(foreach s,$(ALL_S),$(eval $(call _s_rule,$(s))))
 
 # --- Generated files + dirs ---------------------------------------------
 
-# f4 = URBI_FLOAT_TYPE=4 (f32) bake tool — required because cross-stm32f4
-# uses f32, and the default tools/urbi-compile-stdlib bakes f64 (would
-# trigger UCHUNK_LOAD_FLAVOR_MISMATCH on byte 13 at runtime).
-BAKE_TOOL := $(URBI_ROOT)/tools/urbi-compile-stdlib-f4
+mandelbrot_baked.h: mandelbrot.u $(URBI_ROOT)/tools/bake-header.sh $(URBI_ROOT)/build/host/urbi
+	@echo "  BAKE   $@"
+	@sh $(URBI_ROOT)/tools/bake-header.sh $(URBI_ROOT)/build/host/urbi mandelbrot.u $@ mandelbrot_wire
 
-mandelbrot_baked.h: mandelbrot.u $(BAKE_TOOL)
-	@echo "  BAKE   $@ (f32)"
-	@$(BAKE_TOOL) --to-header -i $< -o $@ --symbol mandelbrot_bytecode
+$(URBI_ROOT)/build/host/urbi:
+	@echo "  MAKE   urbi"
+	@$(MAKE) -C $(URBI_ROOT) urbi-bin
 
 $(URBI_LIB):
-	@echo "  MAKE   liburbi.a (cross-stm32f4)"
-	@$(MAKE) -C $(URBI_ROOT) cross-stm32f4
-
-$(BAKE_TOOL):
-	@echo "  MAKE   $(notdir $@)"
-	@$(MAKE) -C $(URBI_ROOT) tools/urbi-compile-stdlib-f4
+	@echo "  MAKE   liburbi.a (cross-arm-cortex-m4f-bytecode-only)"
+	@$(MAKE) -C $(URBI_ROOT) cross-arm-cortex-m4f-bytecode-only
 
 $(BUILD) $(OBJDIR):
 	@mkdir -p $@
