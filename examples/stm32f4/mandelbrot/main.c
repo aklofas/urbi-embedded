@@ -176,7 +176,13 @@ int main(void)
     UVMConfig cfg; memset(&cfg, 0, sizeof cfg);
     cfg.step_budget = STEP_BUDGET;
     cfg.boot_stdlib = 1;
-    cfg.heap_budget = port_alloc_heap_size();
+    /* The collector paces what it tracks (objects, their arrays, loaded
+     * code) against three quarters of this figure.  The allocator's block
+     * headers and the VM's untracked memory come out of the same arena
+     * on top of that, so the declared budget is three quarters of the
+     * arena: declaring the whole arena let the high-water mark reach its
+     * last few hundred bytes on the board. */
+    cfg.heap_budget = port_alloc_heap_size() / 4u * 3u;
 
     console("[1] urbi_open... ");
     s_vm = urbi_open(port_alloc, NULL, &cfg);

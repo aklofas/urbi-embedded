@@ -71,7 +71,7 @@ Each heap figure is read right after a full collection.
 - `alloc live` is the bytes the VM has requested from its allocator and not yet freed. This is the figure the 48 KB boot target caps.
 - `gc live` is the collector's own view of what it holds live.
 - `heap top` is the arena's high-water mark. It includes the allocator's 16-byte block headers, so it reads higher than `alloc live`.
-- `budget` is the heap figure the collector paces against, the arena's size.
+- `budget` is the heap figure the collector paces against: three quarters of the arena (98,304 B), leaving the rest for the allocator's block headers and the VM's memory the collector does not track.
 
 `boot heap:` prints once the VM is open with its standard library, and `ready:` once the verbs, the events, the workload and the tick are installed.
 A `render:` line prints at the end of every render, including one cut short by a press or a pan, and gives the render's wall time.
@@ -101,8 +101,8 @@ The SDRAM controller is initialised before the first allocation, and SDRAM is sl
 | What | Figure |
 | --- | --- |
 | Re-render drift, host 64-bit build at a 32 x 24 canvas | worst 144 B over ten renders |
-| Firmware `mandelbrot.elf`, text / data / bss | 119,552 / 164 / 148,800 B |
-| Firmware `mandelbrot.bin` | 119,720 B |
+| Firmware `mandelbrot.elf`, text / data / bss | 119,608 / 164 / 148,800 B |
+| Firmware `mandelbrot.bin` | 119,776 B |
 | End of `.bss` | 0x200203e4, leaving 64,540 B for the stack |
 | Undefined symbols in the ELF | 0 |
 | Boot heap (board) | from the board log |

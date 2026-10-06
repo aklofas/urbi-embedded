@@ -99,8 +99,8 @@ v2.0 / `0x20`.
 
 | Number | Value |
 |---|---|
-| Firmware `mandelbrot.elf` (text / data / bss) | 119,552 / 164 / 148,800 bytes |
-| Firmware `mandelbrot.bin` | 119,720 bytes |
+| Firmware `mandelbrot.elf` (text / data / bss) | 119,608 / 164 / 148,800 bytes |
+| Firmware `mandelbrot.bin` | 119,776 bytes |
 | Bytecode-only Cortex-M4F archive (`build/arm-cortex-m4f-bytecode-only/liburbi.a`) | 86,324 bytes text+data+bss |
 | Host re-render drift (32 x 24 canvas, 10 renders, 64-bit) | worst 144 bytes |
 | 32-bit boot heap (qemu probe) | 48,980 bytes, unchanged by this tag |

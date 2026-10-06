@@ -115,8 +115,8 @@
 - **SDK:** STM32CubeF4 v1.28.2 (HAL + CMSIS + the DISC1 BSP + the
   ili9341/l3gd20 component drivers; no CubeMX-generated code).
 - **Firmware artifact:** `examples/stm32f4/mandelbrot/build/mandelbrot.bin`
-  built by `make stm32f4-mandelbrot`; `mandelbrot.elf` text 119,552 /
-  data 164 / bss 148,800 B; `mandelbrot.bin` 119,720 B (xpack
+  built by `make stm32f4-mandelbrot`; `mandelbrot.elf` text 119,608 /
+  data 164 / bss 148,800 B; `mandelbrot.bin` 119,776 B (xpack
   arm-none-eabi-gcc 14.2.1).
 - **Smoke steps:**
   1. Boot heap: the `boot heap:` line shows `alloc live` under
