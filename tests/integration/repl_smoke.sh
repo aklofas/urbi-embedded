@@ -145,6 +145,16 @@ else
     fail "-e \"1 +\": rc=$rc, out='$out'"
 fi
 
+# A line nested far past the compile budget is refused, not parsed.
+test_case
+opens=$(printf '%*s' 10000 '' | tr ' ' '('); closes=$(printf '%*s' 10000 '' | tr ' ' ')')
+out=$("$URBI" -e "${opens}1${closes}" 2>&1); rc=$?
+if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q -i 'depth'; then
+    ok "a 10,000-deep expression is refused by the compile budget"
+else
+    fail "a 10,000-deep expression was not refused (rc=$rc): $(printf '%s' "$out" | head -c 200)"
+fi
+
 # --- -e missing expression ---
 test_case
 out=$("$URBI" -e 2>&1 >/dev/null)

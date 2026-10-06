@@ -21,10 +21,17 @@
 #include "urbi/urbi.h"
 #include "emit/ufront.h"
 #include "chunk/uchunk.h"
+#include "rt/urealm.h"
 
 #include "linenoise.h"
 
 #define URBI_CLI_MAX_FILE (16u * 1024u * 1024u)
+
+/* The same compile limits urbi-server gives a session.  Source typed at a
+ * prompt or handed in with -e is not trusted to be shallow: a line nested
+ * ten thousand deep is refused here instead of recursing through the
+ * parser. */
+static const UCompileBudget CLI_BUDGET = { 256, 100000, 65536 };
 
 static void print_usage(FILE *out) {
     fputs(
@@ -451,6 +458,7 @@ int main(int argc, char *argv[]) {
     urbi_set_writer(vm, cli_writer, NULL);
     urbi_set_diag(vm, cli_diag, NULL);
     urbi_set_clock(vm, cli_clock, NULL);
+    urealm_set_budget(vm, urbi_realm_main(vm), &CLI_BUDGET);
     int rc = EXIT_SUCCESS;
 
     if (dump || dump_wire) {
