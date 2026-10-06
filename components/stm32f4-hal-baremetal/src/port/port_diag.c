@@ -11,11 +11,11 @@ void port_diag(struct UVM *vm, void *ud, int level, const char *msg, size_t len)
     (void)ud;
 
     const char *prefix;
-    if (level <= 3)      prefix = "[E]";
-    else if (level == 4) prefix = "[W]";
-    else if (level <= 6) prefix = "[I]";
-    else                 prefix = "[D]";
+    if (level <= 3)      prefix = "E";
+    else if (level == 4) prefix = "W";
+    else if (level <= 6) prefix = "I";
+    else                 prefix = "D";
 
-    port_writer(NULL, prefix, 3, msg, len);
+    port_writer(NULL, prefix, 1, msg, len);
     port_uart_write("\r\n", 2);
 }
