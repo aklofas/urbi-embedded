@@ -135,7 +135,12 @@ static void tim2_init_50ms(void)
     htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
     if (HAL_TIM_Base_Init(&htim2) != HAL_OK) while (1);
 
-    HAL_NVIC_SetPriority(TIM2_IRQn, 6, 0);
+    /* Same preemption priority as EXTI0 (button): both handlers call
+     * urbi_inject_event, whose ring has a single producer, and two
+     * interrupts at different preemption priorities could preempt each
+     * other mid-inject and drop an event. The sub-priority (1) only
+     * orders two pending IRQs; it cannot let one preempt the other. */
+    HAL_NVIC_SetPriority(TIM2_IRQn, 5, 1);
     HAL_NVIC_EnableIRQ(TIM2_IRQn);
 
     if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK) while (1);

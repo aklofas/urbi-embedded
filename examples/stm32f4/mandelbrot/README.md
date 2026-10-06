@@ -101,8 +101,8 @@ The SDRAM controller is initialised before the first allocation, and SDRAM is sl
 | What | Figure |
 | --- | --- |
 | Re-render drift, host 64-bit build at a 32 x 24 canvas | worst 144 B over ten renders |
-| Firmware `mandelbrot.elf`, text / data / bss | 119,548 / 164 / 148,800 B |
-| Firmware `mandelbrot.bin` | 119,716 B |
+| Firmware `mandelbrot.elf`, text / data / bss | 119,552 / 164 / 148,800 B |
+| Firmware `mandelbrot.bin` | 119,720 B |
 | End of `.bss` | 0x200203e4, leaving 64,540 B for the stack |
 | Undefined symbols in the ELF | 0 |
 | Boot heap (board) | from the board log |
@@ -117,6 +117,7 @@ The `.bss` figure includes the 128 KB arena and the linker's 16.5 KB stack-and-h
 - The gyro reports a small nonzero rate at rest. Turns below the workload's deadzone of 3,000 mdeg/s are ignored so the view does not drift; a board with a larger resting bias may still creep, and `GYRO_DEADZONE` in `mandelbrot.u` tunes it.
 - The zoom only goes one way: each press halves the span, and a reset returns to the full view.
 - The firmware has no compiler and no value formatter, so the workload prints nothing itself; every console line comes from the shim.
+- TIM2 (the render tick) and the button's EXTI0 interrupt share one preemption priority: both call `urbi_inject_event`, whose ring has a single producer, and giving them different preemption priorities could let one preempt the other mid-inject and drop a press.
 
 ## File layout
 

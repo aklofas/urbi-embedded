@@ -97,6 +97,10 @@ the Pico and STM32F4 entries describe what builds now.
     `port_lcd_fill_rect_native` rotates every rectangle 90° so the
     workload can address it as a 240×320 portrait surface
     (`port_lcd.c`).
+  - TIM2 (the render tick) and the button's EXTI0 interrupt both call
+    `urbi_inject_event`, whose ring has a single producer, so the two
+    share one preemption priority — different priorities would let one
+    preempt the other mid-inject and drop an event.
 - **SDRAM option:** the VM's heap can move to the 8 MB SDRAM at
   `0xD0000000` by adding `-DURBI_HEAP_EXTERNAL_ADDR=0xD0080000UL
   -DURBI_HEAP_BYTES=1048576UL` to the example's `DEFS`; not the

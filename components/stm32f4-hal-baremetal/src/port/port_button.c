@@ -27,7 +27,11 @@ void port_button_init_gpio(void) {
     };
     HAL_GPIO_Init(GPIOA, &gpio);
     /* Priority: above SysTick default (15) so SysTick stays preemptible by
-     * EXTI0 — standard embedded convention. */
+     * EXTI0 — standard embedded convention. TIM2 (the render tick) matches
+     * this preemption priority: both handlers call urbi_inject_event,
+     * whose ring has a single producer, and two interrupts at different
+     * preemption priorities could preempt each other mid-inject and drop
+     * an event. */
     HAL_NVIC_SetPriority(EXTI0_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 }
