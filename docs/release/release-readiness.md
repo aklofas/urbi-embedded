@@ -44,7 +44,7 @@
 | Linux x86_64 (host) | shipped | host-test matrix | n/a | n/a | continuously |
 | Raspberry Pi Pico | shipped; rebuilt on the current core and hardware-validated | `cross-pico-repl` | none automated | hardware-validation.md | 2026-10-05 (v0.16.1-pico) |
 | ESP32-S3 | parked until its own tag | retired target name; see `internals/ports.md` | qemu-smoke reactive | hardware-validation.md | 2026-05-16 (v0.7.2) |
-| STM32F4 | builds in CI (`cross-stm32f4`); board log pending | `cross-stm32f4`, `test-port-stm32f4` | none automated | hardware-validation.md | 2026-05-17 (v0.8.2) |
+| STM32F4 | shipped; rebuilt on the current core and hardware-validated | `cross-stm32f4`, `test-port-stm32f4` | none automated | hardware-validation.md | 2026-10-06 (v0.16.2-stm32f4) |
 | ARM Cortex-M7 | archive build (CI) | `cross-arm-cortex-m7` | none | n/a | n/a |
 | RISC-V rv32imc | archive build (CI) | `cross-riscv32` | none | n/a | n/a |
 | STM32H7 | **removed from v1.0 claims** | n/a | n/a | n/a | n/a |

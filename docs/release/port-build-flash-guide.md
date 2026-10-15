@@ -77,6 +77,8 @@ RGB LED (RED→GREEN→BLUE) tracking targets and the LCD shows a crosshair over
 make stm32f4-mandelbrot        # host urbi + freestanding Cortex-M4F archive + firmware
 # -> examples/stm32f4/mandelbrot/build/mandelbrot.bin
 STM32_Programmer_CLI -c port=SWD -w examples/stm32f4/mandelbrot/build/mandelbrot.bin 0x08000000 -rst
+# or, if CubeProgrammer rejects the board's ST-LINK firmware (2.21 did with V2J25M14):
+st-flash --reset write examples/stm32f4/mandelbrot/build/mandelbrot.bin 0x08000000
 ```
 
 Connect the ST-Link VCP (115200 8N1): `picocom -b 115200 /dev/ttyACM0`. The

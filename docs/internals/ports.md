@@ -14,7 +14,7 @@ development target. Ports below cover bare-metal + RTOS silicon.
 **The Raspberry Pi Pico and the STM32F429I-DISC1 are rebuilt on the
 current core** — the Pico at `v0.16.1-pico` (builds in CI as
 `cross-pico-repl`, hardware-validated) and the STM32F4 at
-`v0.16.2-stm32f4` (builds in CI as `cross-stm32f4`, board log pending)
+`v0.16.2-stm32f4` (builds in CI as `cross-stm32f4`, hardware-validated)
 — and **ESP32-S3 stays parked until its own tag**: the core
 re-foundation replaced the runtime it was brought up against, and it
 has not been rebuilt on it: its component manifest, the `components/`
@@ -64,7 +64,7 @@ the Pico and STM32F4 entries describe what builds now.
 ## STM32F429I-DISC1 (STMicroelectronics, Cortex-M4F)
 
 - **Status:** rebuilt on the current core at `v0.16.2-stm32f4`; builds
-  in CI (`cross-stm32f4`); board log pending, record in
+  in CI (`cross-stm32f4`); hardware-validated 2026-10-06, log in
   [`../release/hardware-validation.md`](../release/hardware-validation.md).
 - **Toolchain and HAL:** xpack `arm-none-eabi-gcc` 14.2.1, STM32CubeF4
   v1.28.2 (HAL + CMSIS + the DISC1 BSP + the ili9341/l3gd20 component

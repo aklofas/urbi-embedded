@@ -42,6 +42,11 @@ STM32_Programmer_CLI -c port=SWD -w build/mandelbrot.bin 0x08000000 -rst
 `make -C examples/stm32f4/mandelbrot flash` runs the same command from the repository root.
 `make -C examples/stm32f4/mandelbrot flash-stlink` flashes through `st-flash` instead.
 
+STM32CubeProgrammer refuses a DISC1 whose ST-LINK firmware is older than it
+wants (2.21 rejected V2J25M14 on the validation board). Either upgrade the
+ST-LINK firmware with `STM32_Programmer_CLI -c port=SWD -fwupgrade` or use
+`st-flash`, which takes the board as it is.
+
 ## Connect
 
 USART1 is routed to the ST-Link's virtual COM port, at 115200 8N1:
@@ -105,9 +110,9 @@ The SDRAM controller is initialised before the first allocation, and SDRAM is sl
 | Firmware `mandelbrot.bin` | 119,776 B |
 | End of `.bss` | 0x200203e4, leaving 64,540 B for the stack |
 | Undefined symbols in the ELF | 0 |
-| Boot heap (board) | from the board log |
-| First render time (board) | from the board log |
-| `alloc live` after the first render and after ten presses (board) | from the board log |
+| Boot heap (board, STM32CubeCLT 13.3.1 build) | `alloc live` 48,938 B |
+| First render time (board, start view) | 76,294 ms |
+| `alloc live` after the first render and after ten presses (board) | 68,782 B, then 68,014–68,910 B over ~100 renders |
 
 The `.bss` figure includes the 128 KB arena and the linker's 16.5 KB stack-and-heap reservation.
 
@@ -117,6 +122,7 @@ The `.bss` figure includes the 128 KB arena and the linker's 16.5 KB stack-and-h
 - The gyro reports a small nonzero rate at rest. Turns below the workload's deadzone of 3,000 mdeg/s are ignored so the view does not drift; a board with a larger resting bias may still creep, and `GYRO_DEADZONE` in `mandelbrot.u` tunes it.
 - The zoom only goes one way: each press halves the span, and a reset returns to the full view.
 - The firmware has no compiler and no value formatter, so the workload prints nothing itself; every console line comes from the shim.
+- The arena's high-water mark (`heap top`) creeps slowly while `alloc live` stays flat: the allocator's first-fit freelist does not always refit a freed block to a later request, so a fresh block comes off the top now and then. On the validation board it rose 528 B per ~50 renders from 103,968 B, which leaves the 26 KB of headroom good for a few thousand renders; a longer run has not been measured.
 - TIM2 (the render tick) and the button's EXTI0 interrupt share one preemption priority: both call `urbi_inject_event`, whose ring has a single producer, and giving them different preemption priorities could let one preempt the other mid-inject and drop a press.
 
 ## File layout

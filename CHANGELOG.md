@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.16.2-stm32f4 — 2026-10-DD
+## v0.16.2-stm32f4 — 2026-10-14
 
 The STM32F429I-DISC1 Mandelbrot example is rebuilt on the re-founded
 core, rendering from a 128 KB internal-SRAM heap through a detached
@@ -105,7 +105,7 @@ v2.0 / `0x20`.
 | Host re-render drift (32 x 24 canvas, 10 renders, 64-bit) | worst 144 bytes |
 | 32-bit boot heap (qemu probe) | 48,980 bytes, unchanged by this tag |
 | Runners | unit 588 / 0 (584 + 4 new); runtime (rt) 255 / 0 (254 + 1 new); corpus (chk) 371 / 0 (369 + 2 activated) |
-| Board figures | pending the board log |
+| Board (STM32F429I-DISC1, 2026-10-06) | boot heap `alloc live` 48,938 bytes; full render 76,294 ms; ~100 re-renders at 68,014–68,910 bytes live, no `OutOfMemoryError`, no reset; `heap top` 103,968 → 105,024 bytes over ~100 renders (fragmentation; see `docs/release/hardware-validation.md`) |
 
 ## v0.16.1-pico — 2026-10-05
 

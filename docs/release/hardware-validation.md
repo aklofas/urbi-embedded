@@ -106,18 +106,24 @@
 
 ## STM32F429I-DISC1
 
-### 2026-10-DD — v0.16.2-stm32f4 (board log pending)
+### 2026-10-06 — v0.16.2-stm32f4
 
 - **Board:** STM32F429I-DISC1 discovery kit (Cortex-M4F, 2 MB flash,
   192 KB main SRAM + 64 KB CCM, 240×320 ILI9341 LCD, L3GD20 gyro,
   hardware single-precision FPU).
-- **Toolchain:** the bench's `arm-none-eabi-gcc` (named at the gate).
+- **Toolchain:** STM32CubeCLT 13.3.1 `arm-none-eabi-gcc` on the bench
+  (xpack 14.2.1 in CI; the two differ in code size, see below).
 - **SDK:** STM32CubeF4 v1.28.2 (HAL + CMSIS + the DISC1 BSP + the
   ili9341/l3gd20 component drivers; no CubeMX-generated code).
 - **Firmware artifact:** `examples/stm32f4/mandelbrot/build/mandelbrot.bin`
-  built by `make stm32f4-mandelbrot`; `mandelbrot.elf` text 119,608 /
-  data 164 / bss 148,800 B; `mandelbrot.bin` 119,776 B (xpack
-  arm-none-eabi-gcc 14.2.1).
+  built by `make stm32f4-mandelbrot` from branch head `0107f34a`;
+  `mandelbrot.elf` text 119,112 / data 164 / bss 148,800 B on the bench
+  (119,608 / 164 / 148,800 B and a 119,776 B `.bin` with xpack).
+- **Flashing:** `st-flash --reset write build/mandelbrot.bin 0x08000000`
+  (`make -C examples/stm32f4/mandelbrot flash-stlink`). STM32CubeProgrammer
+  2.21 refused this board's ST-LINK firmware (V2J25M14) and would need the
+  ST-LINK upgraded first; `st-flash` from the open-source stlink tools
+  accepted it as-is.
 - **Smoke steps:**
   1. Boot heap: the `boot heap:` line shows `alloc live` under
      49,152 B.
@@ -128,8 +134,33 @@
      `alloc live` is within 1,024 B of the first one's.
   4. Ten presses: after ten presses there is no `OutOfMemoryError`
      line and the board has not reset.
-- **Observed output:** pending.
-- **Verifier:** the owner.
+- **Observed output** (picocom on `/dev/ttyACM0`, four sittings on
+  2026-10-06; figures from the board's own lines):
+
+  | Reading | Value |
+  |---|---|
+  | `boot heap: alloc live` | 48,938 B (cap 49,152), identical across every reset |
+  | `ready: alloc live` | 64,782 B |
+  | full render at the start view | 76,294 ms; `after render: alloc live` 68,782 B |
+  | deep zoom (main cardioid, every pixel at max iterations) | 144,837 ms |
+  | ~100 re-renders (10+ USER presses, gyro pans, mid-render aborts) | `alloc live` 68,014–68,910 B, worst 896 B over the first render |
+  | `heap top` after the first render | 103,968 B of the 131,072 B arena (budget 98,304 B) |
+  | `heap top` after ~100 renders | 105,024 B (two 528 B steps) |
+  | `OutOfMemoryError` lines / resets | none |
+
+  Items 1 to 4 all pass. The first three sittings ran with the whole
+  arena declared as the heap budget: `alloc live` behaved the same, but
+  `heap top` reached 130,608 B of the 131,072 B arena, because the
+  collector paces only the bytes it tracks while the allocator's block
+  headers and the VM's untracked memory share the arena. Commit
+  `0107f34a` sets the budget to three quarters of the arena, and the
+  fourth sitting above is on that build. The tilt-driven ~40 ms
+  re-renders in the log are the gyro pan redrawing a few tiles, not a
+  fault; a press mid-render aborts it, so such a press prints two
+  `render:` lines. The slow `heap top` creep is filed as a known limit
+  (fragmentation; `alloc live` is flat). RESET reboots to the same
+  `boot heap:` figure.
+- **Verifier:** aklofas.
 
 ### 2026-05-17 — v0.8.2-stm32f4-mandelbrot
 
