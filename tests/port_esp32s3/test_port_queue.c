@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 /* Two producers post concurrently; only the draining thread injects, and
  * every record it drains reaches the runtime exactly once, in each
@@ -30,7 +31,8 @@ static void test_only_the_drainer_injects_and_nothing_is_lost(void)
     pthread_create(&b, NULL, producer, (void *)2);
     size_t drained = 0;
     while (drained < 2 * PER_PRODUCER) {
-        if (port_queue_wait(10) == 1 || 1) drained += port_queue_drain(NULL);
+        (void)port_queue_wait(10);
+        drained += port_queue_drain(NULL);
     }
     pthread_join(a, NULL); pthread_join(b, NULL);
     drained += port_queue_drain(NULL);
@@ -61,9 +63,30 @@ static void test_queue_full_drops_and_counts_without_blocking(void)
     assert(port_queue_post(&r) == 0);                 /* room again */
     printf("test_queue_full_drops_and_counts_without_blocking PASS\n");
 }
+/* The wait reports a queued record without taking it, and on an empty
+ * queue returns 0 after its timeout. */
+static void test_wait_peeks_a_record_and_times_out_when_empty(void)
+{
+    mock_freertos_reset();
+    assert(port_queue_init(4) == 0);
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    assert(port_queue_wait(50) == 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    long waited_ms = (long)(t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
+    assert(waited_ms >= 40);                          /* coarse: the mock waits on the wall clock */
+    port_event_rec r; memset(&r, 0, sizeof r); r.id = 3;
+    assert(port_queue_post(&r) == 0);
+    assert(port_queue_wait(10) == 1);
+    assert(port_queue_wait(0) == 1);                  /* still queued: the wait only peeks */
+    assert(port_queue_drain(NULL) == 1);
+    assert(port_queue_wait(0) == 0);
+    printf("test_wait_peeks_a_record_and_times_out_when_empty PASS\n");
+}
 int main(void)
 {
     test_only_the_drainer_injects_and_nothing_is_lost();
     test_queue_full_drops_and_counts_without_blocking();
+    test_wait_peeks_a_record_and_times_out_when_empty();
     return 0;
 }

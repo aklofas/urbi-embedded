@@ -58,7 +58,7 @@ static void board_open(Board *b)
 {
     s_live = 0; s_crosshairs = s_targets = 0; s_cx = s_cy = -1; s_now_us = 1000000; s_last_log[0] = 0;
     UVMConfig cfg; memset(&cfg, 0, sizeof cfg);
-    cfg.step_budget = 256; cfg.boot_stdlib = 1; cfg.heap_budget = 120u * 1024u;
+    cfg.step_budget = 256; cfg.boot_stdlib = 1; cfg.heap_budget = 98304u;   /* the board's: 3/4 of its 131,072 B arena */
     b->vm = urbi_open(counting_alloc, NULL, &cfg);
     UASSERT(b->vm != NULL);
     urbi_set_clock(b->vm, fake_clock, NULL);
@@ -81,6 +81,7 @@ static char *read_file(const char *path)
 static void board_load(Board *b)
 {
     char *src = read_file("examples/esp32/eye_demo/main/eye_demo.u");
+    if (!src) return;   /* read_file has counted the failure */
     uint8_t *bytes = NULL; size_t n = 0; char err[256] = {0};
     UASSERT_EQ(urbi_compile(b->vm, src, strlen(src), "eye_demo.u", &bytes, &n, err, sizeof err), URBI_OK);
     UValue out = urbi_make_nil();
@@ -181,7 +182,7 @@ static void a_too_deep_session_request_is_refused_and_the_session_survives(void)
     urepl_buffer_client_write(bt, deep, k);
     urbi_repl_serve_step(srv, 0); run_quiet(&b); urbi_repl_serve_step(srv, 0);
     char outbuf[2048]; size_t n = urepl_buffer_client_read(bt, outbuf, sizeof outbuf - 1); outbuf[n] = 0;
-    UASSERT(strstr(outbuf, "\"kind\":\"error\"") != NULL);
+    UASSERT(strstr(outbuf, "\"kind\":\"error\",\"code\":\"budget_depth\"") != NULL);
     const char *req = "{\"id\":2,\"op\":\"eval\",\"code\":\"1+1\"}\n";
     urepl_buffer_client_write(bt, req, strlen(req));
     urbi_repl_serve_step(srv, 0); run_quiet(&b); urbi_repl_serve_step(srv, 0);
