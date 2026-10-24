@@ -24,7 +24,7 @@ static void test_realloc_shrink(void) {
 }
 
 static void test_alloc_oom(void) {
-    /* The arena is URBI_ARENA_BYTES (160 KB in the host test). Allocating
+    /* The arena is URBI_ARENA_BYTES (128 KB, the shipped default). Allocating
      * something far larger MUST return NULL, not crash. */
     void *p = port_alloc(NULL, 1024 * 1024, NULL);
     assert(p == NULL);

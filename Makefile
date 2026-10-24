@@ -712,7 +712,7 @@ test-port-esp32s3:
 	      test_port_console)   src=port_console.c ;; \
 	      test_port_queue)     src=port_queue.c ;; \
 	    esac; \
-	    $(CC) -std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PORT_TEST=1 -DURBI_ARENA_BYTES='(160U*1024U)' \
+	    $(CC) -std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PORT_TEST=1 -DURBI_ARENA_BYTES='(128U*1024U)' \
 	        -D_POSIX_C_SOURCE=200809L \
 	        -Iinclude -I$(PORT_ESP32S3_DIR)/src/port -Itests/port_esp32s3 \
 	        tests/port_esp32s3/$$t.c tests/port_esp32s3/mock_freertos.c $(PORT_ESP32S3_DIR)/src/port/$$src \
