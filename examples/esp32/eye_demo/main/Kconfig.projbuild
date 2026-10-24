@@ -8,7 +8,7 @@ menu "Eye Demo Configuration"
             S3 board that is not the EYE.
     config URBI_ARENA_BYTES
         int "urbi heap arena (bytes, internal SRAM)"
-        default 163840
+        default 131072
         range 65536 262144
         help
             The static arena the runtime allocates from.  The collector

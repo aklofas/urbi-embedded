@@ -32,7 +32,7 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 # Heap arena for the runtime, in internal SRAM (see Kconfig.projbuild).
-CONFIG_URBI_ARENA_BYTES=163840
+CONFIG_URBI_ARENA_BYTES=131072
 
 # esp_video DVP capture device and the OV2640 driver, with the sensor's
 # native 240x240 RGB565 at 25 fps so frames match the display 1:1.

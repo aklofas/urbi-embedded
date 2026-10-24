@@ -101,7 +101,7 @@ stats: count <n>, target <name>, live <n> B, dropped <n>
 - `alloc live` is the bytes the VM has requested from its allocator and not yet freed, read right after a full collection.
 - `gc live` is the collector's own view of what it holds live.
 - `heap top` is the arena's high-water mark. It includes the allocator's block headers, so it reads higher than `alloc live`.
-- `budget` is the heap figure the collector paces against: three quarters of the arena.
+- `budget` is the heap figure the collector paces against: three quarters of the arena, 98,304 B by default.
 - `cycles` is the number of collections so far.
 
 `boot heap:` prints once the VM is open with its standard library, and `ready:` once the verbs, the events, the workload, the session and the peripherals are up.
@@ -123,8 +123,9 @@ A pasted picocom log plus the owner's word on the LCD:
 
 ## Memory layout
 
-- The VM's heap is a static arena in `.bss` of internal SRAM, `CONFIG_URBI_ARENA_BYTES` long, served by the component's bump-and-freelist allocator.
-- The collector's budget is three quarters of the arena; the rest covers the allocator's block headers and the memory the collector does not track.
+- The VM's heap is a 128 KB arena in `.bss` of internal SRAM (`CONFIG_URBI_ARENA_BYTES`, 131,072 B by default), served by the component's bump-and-freelist allocator.
+- The arena and the display's 115,200 B framebuffer share the 341,760 B internal DRAM segment, so a larger arena does not link without moving something out.
+- The collector's budget is three quarters of the arena, 98,304 B; the rest covers the allocator's block headers and the memory the collector does not track.
 - The camera's two V4L2 frame buffers are in the 8 MB octal PSRAM, where esp_video places them.
 - The display's 240x240 RGB565 framebuffer is a static in internal SRAM, so the SPI DMA reads it directly.
 - The VM task has a 24 KB stack from the IDF heap; the camera and display tasks have 4 KB static stacks.
@@ -136,8 +137,8 @@ A pasted picocom log plus the owner's word on the LCD:
 | --- | --- |
 | `liburbi.a` for the ESP32-S3, hosted, text / data / bss | 166,340 / 8 / 4 B |
 | `liburbi.a` for the ESP32-S3, bytecode-only, text / data / bss | 95,412 / 8 / 4 B |
-| Firmware `eye_demo.elf` at a 128 KB arena, text / data / bss | 360,025 / 134,998 / 1,101,407 B |
-| Firmware `eye_demo.bin` at a 128 KB arena | 495,136 B |
+| Firmware `eye_demo.elf`, text / data / bss | 360,025 / 134,998 / 1,101,407 B |
+| Firmware `eye_demo.bin` | 495,136 B |
 | Undefined symbols in the ELF | 0 |
 | Boot heap (qemu) | from the smoke |
 | Boot heap and live bytes over five minutes (board) | from the board log |
