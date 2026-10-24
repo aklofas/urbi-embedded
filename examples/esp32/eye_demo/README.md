@@ -119,7 +119,7 @@ A pasted picocom log plus the owner's word on the LCD:
 2. The LCD shows the camera feed with a crosshair following a coloured object; the stats line's count rises.
 3. The BOOT button cycles the target colour; the stats line names the new target.
 4. From picocom: `echo("hi")`, `1+1`, `Tracker.count` answer; `boot.stop()` freezes the crosshair; `at (blob_seen?(var p)) draw_crosshair(p.and(65535), p.shr(16).and(65535))` from the session resumes it.
-5. Five minutes of tracking: the stats line's live bytes flat within 1 KB of the first; no `OutOfMemoryError`, no reset, no task-watchdog warning.
+5. Five minutes of tracking: the stats line's live bytes flat within 1 KB of the first; no `OutOfMemoryError`, no reset, no task-watchdog warning. (A deliberately runaway eval such as `loop {}` from the session is not part of this item: it trips the watchdog by design, see the known limits.)
 
 `blob_seen` carries one packed Integer, so item 4's session watcher binds one variable and unpacks it.
 
@@ -153,7 +153,7 @@ Record the `ready:` line in the board log; there is no cap on it at this tag.
 ## Known limits
 
 - The bootloader's output, the ESP-IDF startup log before `app_main` installs the console hook, and a panic's backtrace are not framed: they reach the port as plain text before or instead of the JSON lines.
-- A continuously busy VM yields one tick every ~100 ms so the idle task and the watchdog stay fed.
+- A continuously busy VM yields one tick every ~100 ms so the idle task and the watchdog stay fed. A session eval is the exception: it runs to completion inside one service step, so an eval longer than 5 s, or any eval while some strand never stops being runnable, trips the task watchdog, whose warning reaches the port as plain text.
 - With no host reading the USB port, each console line waits up to the 100 ms deadline (in practice up to about twice that) and a pending reply stalls the VM loop by that much per iteration.
 - The port is always connected: closing picocom does not end the session, and a new picocom continues the same one.
 - The OV2640's auto exposure and white balance follow the room light; a target that tracks well in daylight may need its thresholds in `eye_demo.u` retuned under warm indoor light.

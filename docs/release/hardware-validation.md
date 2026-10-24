@@ -110,7 +110,8 @@
      from the session resumes it.
   5. Five minutes of tracking: the `stats:` line's live bytes stay flat
      within 1 KB of the first; no `OutOfMemoryError`, no reset, no
-     task-watchdog warning.
+     task-watchdog warning. An eval that never ends, typed on purpose at
+     step 4, trips the watchdog by design and is not a failure of this item.
 - **Observed output:** pending.
 - **Verifier:** the owner.
 
