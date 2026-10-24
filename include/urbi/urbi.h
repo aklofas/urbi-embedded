@@ -325,7 +325,10 @@ int urbi_event_register(UVM *vm, URealm *realm, const char *name, urbi_event_id_
  * integer -- the first eight bytes of the payload, zero-extended.
  * URBI_ERR_INVALID_ARG for an unregistered id or an oversized payload,
  * URBI_ERR_OOM when the ring is full (the injection is dropped, which is
- * the only thing available without blocking an interrupt). */
+ * the only thing available without blocking an interrupt).  The ring has
+ * one producer: all injections on a VM must come from one execution
+ * context, so an embedder with several interrupt sources or tasks funnels
+ * them through one queue drained by the thread that injects. */
 int urbi_inject_event(UVM *vm, urbi_event_id_t id, const urbi_event_payload_t *payload, size_t n);
 /* The event cell an id names.  An interrupt handler can only inject by
  * id, and script can only wait on a value; this is the bridge.  Store the
