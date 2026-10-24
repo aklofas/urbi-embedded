@@ -128,7 +128,7 @@ A pasted picocom log plus the owner's word on the LCD:
 - The collector's budget is three quarters of the arena, 98,304 B; the rest covers the allocator's block headers and the memory the collector does not track.
 - The camera's two V4L2 frame buffers are in the 8 MB octal PSRAM, where esp_video places them.
 - The display's 240x240 RGB565 framebuffer is a static in internal SRAM, so the SPI DMA reads it directly.
-- The VM task has a 24 KB stack from the IDF heap; the camera and display tasks have 4 KB static stacks.
+- The VM task has a 32 KB stack from the IDF heap; the camera and display tasks have 4 KB static stacks.
 - The USB Serial/JTAG driver holds a 1 KB receive ring and an 8 KB transmit ring, the transmit ring as large as the session's output buffer.
 
 ## Measured
@@ -142,7 +142,7 @@ A pasted picocom log plus the owner's word on the LCD:
 | Undefined symbols in the ELF | 3, all IDF linker hooks (none from the runtime, the port or the demo) |
 | Boot heap (qemu), alloc live / gc live / heap top | 48,748 / 26,992 / 71,768 B of a 131,072 B arena (budget 98,304 B) |
 | After one session request (qemu), alloc live / gc live / heap top | 50,249 / 27,752 / 75,120 B |
-| Task stack high water (qemu) | 24,440 B used of 65,536 B; `URBI_TASK_STACK` set to 36 KB |
+| Task stack high water (qemu) | 24,440 B used of 65,536 B; `URBI_TASK_STACK` set to 32 KB |
 | Boot heap and live bytes over five minutes (board) | from the board log |
 
 ## Known limits

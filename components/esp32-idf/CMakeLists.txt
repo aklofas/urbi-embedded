@@ -15,7 +15,7 @@ file(GLOB URBI_PORT_SRC "${CMAKE_CURRENT_LIST_DIR}/src/port/*.c")
 idf_component_register(
     SRCS ${URBI_PORT_SRC}
     INCLUDE_DIRS "${URBI_ROOT}/include" "${CMAKE_CURRENT_LIST_DIR}/src/port"
-    REQUIRES freertos esp_timer esp_system heap driver esp_driver_usb_serial_jtag log esp_libc
+    REQUIRES freertos esp_timer esp_system heap driver esp_driver_usb_serial_jtag log
 )
 add_library(liburbi STATIC IMPORTED GLOBAL)
 set_target_properties(liburbi PROPERTIES IMPORTED_LOCATION "${LIBURBI_ARCHIVE}")

@@ -65,7 +65,7 @@ static void smoke_task(void *arg)
     rcfg.output_buf_cap = 4096; rcfg.default_budget.max_parser_depth = 32; rcfg.default_budget.max_ast_nodes = 10000; rcfg.default_budget.max_source_bytes = 8192;
     UReplServer *srv = NULL; UTransport t; smoke_transport_vtable(&t);
     if (urbi_repl_serve_init(vm, &rcfg, &srv) != URBI_OK || urbi_repl_register_transport(srv, &t) != URBI_OK) { printf("FAIL: session\n"); goto done; }
-    /* A request at the budget's depth, so the stack high-water below is the worst the session can cost. */
+    /* A request near the parser-depth budget, so the high-water below covers a deep parse. */
     char req[256]; size_t k = (size_t)snprintf(req, sizeof req, "{\"id\":1,\"op\":\"eval\",\"code\":\"");
     for (int i = 0; i < 30; i++) req[k++] = '(';
     req[k++] = '1'; req[k++] = '+'; req[k++] = '1';

@@ -33,10 +33,9 @@
 #define USJ_RX_BYTES     1024u
 #define USJ_TX_BYTES     8192u   /* = the session's output_buf_cap: a reply frame is never split around a console line */
 #define USJ_DEADLINE_MS  100u
-/* From the qemu smoke: the session at its parser-depth budget left 41,096 B
- * of a 65,536 B stack, so 24,440 B used; rounded up to 4 KB (28 KB) plus
- * an 8 KB margin.  Floor 16 KB. */
-#define URBI_TASK_STACK  (36u * 1024u)
+/* From the qemu smoke: a deep parse left 41,096 B of a 65,536 B stack, so
+ * 24,440 B used; rounded up to 4 KB (24 KB) plus an 8 KB margin.  Floor 16 KB. */
+#define URBI_TASK_STACK  (32u * 1024u)
 #define ARENA_BYTES      ((size_t)CONFIG_URBI_ARENA_BYTES)
 
 static int c_draw_crosshair(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
