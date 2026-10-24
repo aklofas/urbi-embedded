@@ -15,5 +15,6 @@ menu "Eye Demo Configuration"
             is told three quarters of it as its budget; the rest covers
             the allocator's block headers and the memory the collector
             does not track.  The boot log prints the free internal heap
-            beside it so the headroom is visible.
+            beside it so the headroom is visible.  Values above the
+            default may not link beside the display's static frame buffer.
 endmenu

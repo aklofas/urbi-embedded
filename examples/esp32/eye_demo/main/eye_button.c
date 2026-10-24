@@ -1,12 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* eye_button — GPIO 0 (BOOT) interrupt -> the port's event queue.
  *
- * The handler is IRAM_ATTR and the camera's DVP driver installs the GPIO
- * service with ESP_INTR_FLAG_IRAM, but port_queue_post_from_isr is
- * linked in flash: a press while the flash cache is off (a flash write
- * or erase) would fault.  The demo writes no flash at run time.  The
- * handler posts an empty-payload record, which never blocks; the VM task
- * is the only caller of urbi_inject_event.
+ * The handler and port_queue_post_from_isr are both IRAM_ATTR, since the
+ * GPIO service is installed with ESP_INTR_FLAG_IRAM.  The handler posts
+ * an empty-payload record, which never blocks; the VM task is the only
+ * caller of urbi_inject_event.
  *
  * Debounce: the BOOT button bounces 2-4 times within ~150 ms per
  * physical press.  Filtering lives in the workload's button handler

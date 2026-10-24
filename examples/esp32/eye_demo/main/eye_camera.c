@@ -44,7 +44,7 @@
 #include "eye_camera.h"
 #include "eye_display.h"
 #include "detect_blob.h"          /* legacy RGB-distance detector + blob_t */
-#include "detect_blob_chroma.h"   /* chrominance-based detector (2026-05-16) */
+#include "detect_blob_chroma.h"   /* chrominance-based detector */
 
 static const char *TAG = "eye_camera";
 
@@ -153,9 +153,8 @@ static void camera_task_body(void *arg)
         buf.type   = type;
         buf.memory = V4L2_MEMORY_MMAP;
         /* DQBUF-failure streak counter — visible alive-but-failing signal.
-         * On 2026-05-16 the camera task silently stopped producing frames
-         * after ~45s (cam=0 in stats with no log); the user observed the
-         * LCD freeze.  This log discriminates "DQBUF still being called
+         * The camera task has been seen to stop producing frames after
+         * ~45 s with no log while the LCD froze.  This log discriminates "DQBUF still being called
          * but failing" (sensor / V4L2 issue) from "DQBUF never called"
          * (camera task crashed / hung elsewhere). */
         static int dqbuf_err_streak = 0;
@@ -219,18 +218,16 @@ void eye_camera_set_target(chroma_target_t t)
 void eye_camera_init(void)
 {
 #if !CONFIG_EYE_DEMO_ENABLE_CAMERA
-    /* Camera path disabled via Kconfig.  This board (or this ESP-IDF
-     * release) is on the affected-silicon list documented in
-     * docs/urbi-embedded-design-risks.md row "S3 + IDF v6 i2c intr_alloc
-     * incompatibility": esp_video / esp32-camera / any caller of
-     * i2c_new_master_bus crashes inside esp_intr_alloc_intrstatus →
-     * find_desc_for_source at intr_alloc.c:192 (LoadProhibited).
+    /* Camera path disabled via Kconfig, for a board without the sensor or
+     * one where the S3 + IDF v6 I2C interrupt allocation fails: esp_video /
+     * esp32-camera / any caller of i2c_new_master_bus crashes inside
+     * esp_intr_alloc_intrstatus → find_desc_for_source at intr_alloc.c:192
+     * (LoadProhibited).
      *
      * Returning early here keeps the rest of the demo (display, button,
      * reactive at-watcher, urbi VM ticks) fully exercised on hardware
      * — only the blob records are silent. */
     ESP_LOGW(TAG, "camera disabled (CONFIG_EYE_DEMO_ENABLE_CAMERA=n)");
-    ESP_LOGW(TAG, "see docs/urbi-embedded-design-risks.md for context");
     return;
 #else
     /* Diagnostic checkpoint — the previous v0.7.2 attempt on real S3-EYE
@@ -319,7 +316,7 @@ void eye_camera_init(void)
     /* Static-allocated stack + TCB keep the camera task off the heap;
      * 4 KB is enough for the inline detect_blob loop (no recursion,
      * small frame).  Pinned to core 0 so it co-schedules cooperatively
-     * with the urbi VM task per spec §5.1. */
+     * with the urbi VM task. */
     static StackType_t  cam_stack[4096 / sizeof(StackType_t)];
     static StaticTask_t cam_tcb;
     xTaskCreateStaticPinnedToCore(camera_task_body, "cam", 4096, NULL,
