@@ -1146,15 +1146,16 @@ clean:
 #
 # docs-check runs markdown lint + intra-repo link checking over docs/, the
 # top-level README / CONTRIBUTING / CHANGELOG, example READMEs, component
-# READMEs, and tests/qemu docs. Generated build/ and _deps/ trees are
-# excluded so vendored pico-sdk / ESP-IDF sources are not scanned.
+# READMEs, and tests/qemu docs. Generated build/, _deps/ and IDF's
+# managed_components/ trees are excluded so vendored pico-sdk / ESP-IDF
+# sources are not scanned.
 # Gated in CI via the docs-check job (see .github/workflows/ci.yml).
 # Requires markdownlint-cli2 and markdown-link-check in PATH; install with:
 #     npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
 
 DOCS_LINT_TARGETS := 'docs/**/*.md' README.md CONTRIBUTING.md CHANGELOG.md \
     'examples/**/*.md' 'components/**/*.md' 'tests/qemu/**/*.md' \
-    '!**/build/**' '!**/_deps/**'
+    '!**/build/**' '!**/_deps/**' '!**/managed_components/**'
 
 docs-check: docs-check-tools
 	markdownlint-cli2 --config .markdownlint.yaml $(DOCS_LINT_TARGETS)
@@ -1162,7 +1163,7 @@ docs-check: docs-check-tools
 	@find docs examples components tests/qemu \
 	    README.md CONTRIBUTING.md CHANGELOG.md \
 	    -name '*.md' -type f \
-	    ! -path '*/build/*' ! -path '*/_deps/*' \
+	    ! -path '*/build/*' ! -path '*/_deps/*' ! -path '*/managed_components/*' \
 	    -exec markdown-link-check --quiet --config .markdown-link-check.json {} +
 
 docs-check-tools:
