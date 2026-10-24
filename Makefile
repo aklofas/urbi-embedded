@@ -410,8 +410,12 @@ IDF_PATH       ?= $(abspath ../tools/esp-idf)
 IDF_TOOLS_PATH ?= $(abspath ../tools/esp-idf-tools)
 IDF_ENV := test -f "$(IDF_PATH)/export.sh" || \
 	    { echo "esp32s3: no ESP-IDF at $(IDF_PATH) (set IDF_PATH)"; exit 1; }; \
-	  export IDF_PATH="$(IDF_PATH)" IDF_TOOLS_PATH="$(IDF_TOOLS_PATH)"; . "$(IDF_PATH)/export.sh" >/dev/null 2>&1 || \
-	    { echo "esp32s3: sourcing $(IDF_PATH)/export.sh failed (IDF_TOOLS_PATH=$(IDF_TOOLS_PATH))"; exit 1; }
+	  export IDF_PATH="$(IDF_PATH)" IDF_TOOLS_PATH="$(IDF_TOOLS_PATH)"; \
+	  idf_env_log=$$(mktemp) || exit 1; \
+	  . "$(IDF_PATH)/export.sh" >"$$idf_env_log" 2>&1 || \
+	    { echo "esp32s3: sourcing $(IDF_PATH)/export.sh failed (IDF_TOOLS_PATH=$(IDF_TOOLS_PATH)):"; \
+	      cat "$$idf_env_log"; rm -f "$$idf_env_log"; exit 1; }; \
+	  rm -f "$$idf_env_log"
 .PHONY: esp32s3-archives
 esp32s3-archives:
 	@$(IDF_ENV); \
