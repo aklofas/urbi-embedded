@@ -50,11 +50,22 @@ STM32CubeF4 (`HAL_ROOT`, or `../tools/stm32cube-f4`) and is not part of
 `releasetest` (the component's host tests, `test-port-stm32f4`, are);
 CI runs it as `cross-stm32f4`.
 
+`make esp32s3-eye-demo` builds the host `urbi`, the hosted
+`xtensa-esp32s3` archive, and the ESP32-S3-EYE eye demo through
+`idf.py`, and `make esp32s3-smoke` builds the qemu smoke beside it and
+runs it under `idf.py qemu`; both need ESP-IDF (`IDF_PATH` and
+`IDF_TOOLS_PATH`, or `../tools/esp-idf` and `../tools/esp-idf-tools`)
+and are not part of `releasetest` (the component's host tests,
+`test-port-esp32s3`, are); CI runs them in the ESP-IDF container as
+`cross-esp32s3`.
+
 Each example bakes its own workload into a header the same way: the
-Pico's `bake.cmake` and the STM32F4's `tools/bake-header.sh` both run
-the host `urbi --dump-wire-format` on the example's `.u` source and
-turn the resulting blob into a byte array the firmware loads with
-`urbi_load` — two bake scripts, one host binary doing the compiling.
+Pico's `bake.cmake`, the STM32F4's `tools/bake-header.sh` and the
+ESP32-S3's `components/esp32-idf/bake.cmake` (shared by the eye demo
+and the qemu smoke) all run the host `urbi --dump-wire-format` on the
+`.u` source and turn the resulting blob into a byte array the firmware
+loads with `urbi_load` — three bake scripts, one host binary doing the
+compiling.
 
 The cross build compiles the tracked `src/stdlib/urbi_stdlib_bytecode.gen.c`
 like any other source. The bake tool that produces it is host-only and

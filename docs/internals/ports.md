@@ -11,55 +11,60 @@ target Make recipes are in [`build-system.md`](./build-system.md).
 The host build is not a port — `make` (POSIX glibc) is the canonical
 development target. Ports below cover bare-metal + RTOS silicon.
 
-**The Raspberry Pi Pico and the STM32F429I-DISC1 are rebuilt on the
-current core** — the Pico at `v0.16.1-pico` (builds in CI as
-`cross-pico-repl`, hardware-validated) and the STM32F4 at
-`v0.16.2-stm32f4` (builds in CI as `cross-stm32f4`, hardware-validated)
-— and **ESP32-S3 stays parked until its own tag**: the core
-re-foundation replaced the runtime it was brought up against, and it
-has not been rebuilt on it: its component manifest, the `components/`
-tree and the `examples/` workload are all in the tree and all out of
-the build. The 32-bit memory figures are measured now, on a generic
-Cortex-M4 under qemu's MPS2-AN386 model, through the `arm-cortex-m4f`
-cross preset: a booted VM holds 48,980 bytes live (cap 49,152), an idle
-sleeping strand costs 466 bytes, and the leak probes stay flat.
-`make test-probes-32bit` regenerates them (it needs `arm-none-eabi-gcc`
-with newlib and `qemu-system-arm`; CI runs it) — but that preset is
-generic silicon, not any board below, so the number is real without
-being a claim about one of these ports. Read the ESP32-S3 entry below
-as a record of what it needed last time, not as a claim about today;
-the Pico and STM32F4 entries describe what builds now.
+**All three boards are rebuilt on the current core** — the Pico at
+`v0.16.1-pico` (builds in CI as `cross-pico-repl`, hardware-validated),
+the STM32F4 at `v0.16.2-stm32f4` (builds in CI as `cross-stm32f4`,
+hardware-validated) and the ESP32-S3 at `v0.16.3-esp32s3` (builds in CI
+as `cross-esp32s3` with a qemu smoke, board log pending). The 32-bit
+memory figures are measured on a generic Cortex-M4 under qemu's
+MPS2-AN386 model, through the `arm-cortex-m4f` cross preset: a booted
+VM holds 48,980 bytes live (cap 49,152), an idle sleeping strand costs
+466 bytes, and the leak probes stay flat. `make test-probes-32bit`
+regenerates them (it needs `arm-none-eabi-gcc` with newlib and
+`qemu-system-arm`; CI runs it) — but that preset is generic silicon,
+not any board below, so the number is real without being a claim about
+one of these ports. Each entry below describes what builds now.
 
 ## ESP32-S3 (Espressif, Xtensa LX7)
 
-- **Status:** Shipped at `v0.7.2-esp32` (2026-05-16); parked until its
-  own tag. Validated on ESP32-S3-EYE silicon with the `eye_demo`
-  workload (LED + on-die temperature + AOV blob tracking).
-- **Toolchain:** ESP-IDF v6.0.1 (`xtensa-esp32s3-elf-gcc`); hosted
-  newlib (do NOT pass `-ffreestanding` to the `urbi` component;
-  `urbi_aux` separately).
-- **Footprint:** ~120 KB liburbi.a text (cap revised from 105 KB during
-  bring-up). PSRAM available on the EYE variant.
+- **Status:** rebuilt on the current core at `v0.16.3-esp32s3`; builds
+  in CI (`cross-esp32s3`) with the qemu smoke; the board log is pending
+  in [`../release/hardware-validation.md`](../release/hardware-validation.md).
+  First brought up at `v0.7.2-esp32` (2026-05-16) on the ESP32-S3-EYE.
+- **Toolchain:** ESP-IDF v6.0.1 (`xtensa-esp32s3-elf-gcc` esp-15.2.0).
+  The `xtensa-esp32s3` preset builds a hosted archive against the IDF's
+  newlib: `make cross-xtensa-esp32s3-hosted` is 166,340 / 8 / 4 bytes
+  text / data / bss, and the bytecode-only shape the freestanding gate
+  checks is 95,412 / 8 / 4 bytes (`make esp32s3-archives`).
+- **Build:** the component (`components/esp32-idf/`) imports the
+  archive the repository Makefile builds rather than compiling the
+  runtime itself, and the host `urbi` bakes the workload into a header
+  at build time. `make esp32s3-eye-demo` builds the host `urbi`, the
+  hosted archive and the firmware; `make esp32s3-flash` flashes it.
+- **Memory:** the VM's heap is a 128 KB arena in internal SRAM
+  (`CONFIG_URBI_ARENA_BYTES`, 131,072 bytes) served by a
+  bump-and-freelist allocator with its own live-bytes counter; the
+  collector paces against three quarters of it (98,304 bytes). The
+  arena shares the internal DRAM segment with the display's 115,200-byte
+  frame buffer, which is what caps it. The camera's frame buffers are
+  in the 8 MB PSRAM. The VM task's stack is 32 KB, from a qemu high
+  water of 24,440 bytes plus a margin.
+- **Console and session:** one USB Serial/JTAG port carries both. Every
+  line is one NDJSON object: the eval service's replies, and the
+  console text (the writer, the diag hook, and ESP_LOG through
+  `esp_log_set_vprintf`) as `output` envelopes on the `console`
+  channel.
+- **Threading:** one VM task owns the runtime: it steps it, drains a
+  FreeRTOS queue and is the only caller of `urbi_inject_event`. The
+  camera task and the BOOT button interrupt post to that queue, which
+  keeps the event ring's single producer.
 - **Numeric:** Float values are always double (f64); the Xtensa LX7's
   hardware FPU is single-precision, so double arithmetic is in software.
-- **REPL transports:** UART0 console + USB CDC (via TinyUSB ESP-IDF
-  managed component). `UREPL_ESP_IDF_UART_TRANSPORT` is the primary;
-  cooperative drive via `urbi_repl_serve_step` from v0.9.4 onwards.
-- **Build system:** ESP-IDF CMake managed components at
-  `components/urbi/` + `components/urbi_aux/`; consumed by the
-  application's `idf.py build`. Component manifests pin the upstream
-  liburbi.a layout.
 - **Idiosyncrasies:**
-  - ESP-IDF's newlib is hosted, so the `urbi` component does NOT pass
-    `-ffreestanding` (latent landmine fixed during v0.7.2 ship).
-  - PSRAM read/write latency is ~5× internal SRAM — keep the bytecode
-    and interned-string pool in internal SRAM; large blob buffers
-    can spill to PSRAM.
-  - `vm->last_recv` was retired pre-ship (S42); methods receive the
-    receiver through `OP_SELF` instead. Wire format bumped v1.5→v1.6.
-  - Eye demo as a bug-detector caught 10 latent runtime issues during
-    bring-up (waituntil cascade-wake, body-strand module==NULL, &
-    chunk-top driver gap, brace-block bug, etc.).
+  - ESP-IDF's newlib is hosted, so the preset does NOT pass
+    `-ffreestanding`.
+  - PSRAM read/write latency is ~5× internal SRAM — keep the arena in
+    internal SRAM; large frame buffers can live in PSRAM.
 
 ## STM32F429I-DISC1 (STMicroelectronics, Cortex-M4F)
 

@@ -7,19 +7,16 @@ are manual and documented per-architecture below.
 
 **The Raspberry Pi Pico builds from this tree with `make
 pico-repl-demo`; the STM32F429I-DISC1 builds from this tree with `make
-stm32f4-mandelbrot`; ESP32-S3 is parked until its own tag.** The core
-re-foundation replaced the runtime ESP32-S3 was brought up against,
-and its component manifest / `examples/` workload has not been
-rebuilt on it. Section 1 (the Linux host) builds and runs today;
-sections 2 and 4 (the Pico and the STM32F4) build and flash from this
-tree; the steps in section 3 are kept as a record of what worked at
-ESP32-S3's own ship tag, not as commands that build against the tree
-as it stands. The generic Cortex-M0+/M4F/M7/RISC-V archives build and
-are footprint-measured on every push through the cross presets in
-[the build system doc](../internals/build-system.md); the Pico example
-wires in its own hosted shape of the Cortex-M0+ archive and the STM32F4
-example wires in the `arm-cortex-m4f` preset's bytecode-only shape,
-and nothing wires one into the ESP32-S3 example yet.
+stm32f4-mandelbrot`; the ESP32-S3-EYE builds from this tree with `make
+esp32s3-eye-demo`.** Section 1 (the Linux host) builds and runs today;
+sections 2, 3 and 4 (the Pico, the ESP32-S3 and the STM32F4) build and
+flash from this tree. The generic Cortex-M0+/M4F/M7/RISC-V archives
+build and are footprint-measured on every push through the cross
+presets in [the build system doc](../internals/build-system.md); the
+Pico example wires in its own hosted shape of the Cortex-M0+ archive,
+the STM32F4 example wires in the `arm-cortex-m4f` preset's
+bytecode-only shape, and the ESP32-S3 example wires in the hosted shape
+of the `xtensa-esp32s3` preset.
 
 ```sh
 git clone <repo-url> urbi-embedded
@@ -35,7 +32,7 @@ Work through the per-architecture steps below on a pristine tree (no stale
 |--------|-----------|-----------|------------|
 | Linux host REPL | any C99 `cc` (gcc/clang) | — | — |
 | Raspberry Pi Pico (RP2040) | `arm-none-eabi-gcc` (xpack 14.2.1) + CMake 3.13+ | pico-sdk 2.2.0 (`PICO_SDK_PATH`, default `../tools/pico-sdk`) | drag-drop `.uf2` (BOOTSEL) |
-| ESP32-S3 | ESP-IDF v6.0.1 (`IDF_PATH`, `. $IDF_PATH/export.sh`) | bundled in IDF | `idf.py flash` |
+| ESP32-S3-EYE | ESP-IDF v6.0.1 and its tools (`IDF_PATH` / `IDF_TOOLS_PATH`, default `../tools/esp-idf` / `../tools/esp-idf-tools`) | bundled in IDF; camera components fetched by `idf.py` | `idf.py flash` (`make esp32s3-flash`) |
 | STM32F429I-DISC1 | `arm-none-eabi-gcc` (xpack 14.2.1) | STM32CubeF4 v1.28.2 (`HAL_ROOT`, default `../tools/stm32cube-f4`) | STM32CubeCLT's `STM32_Programmer_CLI`, or `st-flash` (stlink) |
 
 ## 1. Linux host REPL (30-second quickstart)
@@ -60,16 +57,22 @@ Each request is one JSON object per line; `{"id":1,"op":"eval","code":"1+1"}`
 answers with `"value":"2"`. Full build, flash, wire and known-limits detail
 is in [the example's own README](../../examples/pico/repl_demo/README.md).
 
-## 3. ESP32-S3 — `examples/esp32/eye_demo` (parked until its own tag)
+## 3. ESP32-S3-EYE — `examples/esp32/eye_demo`
 
 ```sh
-. $IDF_PATH/export.sh
-cd examples/esp32/eye_demo && idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+make esp32s3-eye-demo                  # host urbi + hosted Xtensa archive + idf.py build
+# -> examples/esp32/eye_demo/build/eye_demo.bin
+make esp32s3-flash PORT=/dev/ttyACM0
+picocom -b 115200 /dev/ttyACM0
 ```
 
-The ~330-line eye demo runs a blob-detection loop; the BOOT button cycles the
-RGB LED (RED→GREEN→BLUE) tracking targets and the LCD shows a crosshair overlay.
+The board's USB Serial/JTAG port carries the console and a REPL session
+together: every line is one JSON object, so `idf.py monitor` shows raw
+JSON and picocom is the client. `{"id":1,"op":"eval","code":"1+1"}`
+answers with `"value":"2"`. The LCD shows the camera feed with a
+crosshair on a coloured object, and the BOOT button cycles the target
+colour. Full build, flash, wire and known-limits detail is in
+[the example's own README](../../examples/esp32/eye_demo/README.md).
 
 ## 4. STM32F429I-DISC1 — `examples/stm32f4/mandelbrot`
 
@@ -90,7 +93,7 @@ refinement; tilting the board pans the view (gyro) and the USER button zooms
 
 ## Notes
 
-- Skip the ESP32-S3 step cleanly when `IDF_PATH` is unset (its build is
-  environment-heavy); work through the other three regardless.
+- Skip the ESP32-S3 step cleanly when no ESP-IDF is installed (its build
+  is environment-heavy); work through the other three regardless.
 - A port that fails to build from a fresh tree is a release blocker (it would
   also block the Track A hardware regression).

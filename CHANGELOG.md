@@ -1,5 +1,118 @@
 # Changelog
 
+## v0.16.3-esp32s3 — 2026-10-DD
+
+The ESP32-S3-EYE eye demo is rebuilt on the re-founded core, tracking a
+coloured blob from the camera with the tracking logic in urbiscript and
+serving a REPL session over the board's USB Serial/JTAG port. One VM
+task owns the runtime and is fed by a FreeRTOS queue. The component
+links the archive the repository Makefile builds, and the qemu smoke
+returns as a CI gate. No public C API change. ABI 0/28/1 -> 0/28/2.
+Wire format unchanged at v2.0 / `0x20`.
+
+### Added
+
+- The `xtensa-esp32s3` preset and `make esp32s3-archives`: builds the
+  hosted and bytecode-only archives with the IDF's own
+  `xtensa-esp32s3-elf-gcc` inside the ESP-IDF environment, and runs the
+  freestanding-archive gate on the bytecode-only shape. The preset is
+  not in `cross-all`, which runs on hosts without this toolchain.
+- The component (`components/esp32-idf/`), rebuilt: a static arena in
+  internal SRAM served by a bump-and-freelist allocator with its own
+  live-bytes counter; console framing that turns the writer, the diag
+  hook and ESP_LOG (through `esp_log_set_vprintf`) into NDJSON `output`
+  envelopes, each line all-or-nothing; an event queue that tasks and
+  interrupts post to without blocking and that one drainer injects
+  from, keeping the event ring's single producer; and a USB Serial/JTAG
+  `UTransport` for the eval service. `components/esp32-idf/bake.cmake`
+  bakes a workload with the host `urbi` and is shared by the eye demo
+  and the qemu smoke.
+- `make esp32s3-eye-demo` (the host `urbi`, the hosted archive and the
+  firmware through `idf.py`), `make esp32s3-flash`, and `make
+  esp32s3-smoke` (the qemu smoke under `idf.py qemu`).
+- The eye demo, rewritten: the camera task finds the blob in C and
+  posts it to the queue; the VM task drains it into `blob_seen` and
+  `button_pressed` events; the workload moves the crosshair, counts the
+  blobs, cycles the target colour on each BOOT press, and prints a
+  `stats:` line every two seconds, all under the tag `boot`, so a
+  session can stop them and take the board over. The board exposes
+  `draw_crosshair`, `set_target_chroma`, `log`, `heap_live` and
+  `events_dropped` on `Lobby`.
+- `test-port-esp32s3`: 15 host-side cases covering the component's
+  allocator, console framing and event queue against a pthread mock of
+  the FreeRTOS queue; in `RELEASETEST_PHASE1` after `test-port-stm32f4`.
+- Six host-side pins for the workload's board contract
+  (`tests/unit/test_esp32s3_workload.c`): a blob moves the crosshair
+  and counts; an off-panel blob is clamped; two presses inside 200 ms
+  cycle once; a session can stop `boot` and later blobs go unobserved;
+  a too-deep session request is refused and the session survives; ten
+  blobs return to the same live bytes.
+- The `cross-esp32s3` CI job: in the `espressif/idf:v6.0.1` container,
+  builds the firmware, the bytecode-only archive and its gate, runs the
+  component's host tests and the qemu smoke, prints the firmware
+  footprint, and uploads the `.bin` (and the UART log on failure).
+- The component's README and the example's README.
+
+### Changed
+
+- `components/esp32-idf` links the archive the Makefile builds
+  (`LIBURBI_ARCHIVE`) and is not a standalone `idf.py` component; it
+  resolves the archive's `__getreent` by linking `idf::esp_libc` onto
+  the imported archive target.
+- The `urbi_inject_event` doc comment states the event ring's
+  single-producer rule: an embedder with several interrupt sources or
+  tasks funnels them through one queue drained by the thread that
+  injects.
+- The eye demo's task-watchdog settings return to the IDF defaults: the
+  scan that starved the idle task is gone.
+- `blob_seen` carries one packed Integer (x in bits 0-15, y in bits
+  16-31, the pixel count from bit 32), so a session watcher binds one
+  variable.
+- The eye demo's arena defaults to 128 KB (`CONFIG_URBI_ARENA_BYTES`,
+  131,072 B), with the collector paced against three quarters of it:
+  the arena shares the internal DRAM segment with the display's
+  115,200 B frame buffer.
+- `docs-check` skips IDF's `managed_components/` trees.
+
+### Removed
+
+- `port_isr_check.c` and `port_freertos_task.c` from the component.
+- The eye demo's in-script pixel scanner and its thirty `c_*` stats
+  natives.
+- `tests/qemu/component_smoke/` and the qemu smoke's
+  `idf_component.yml`.
+- The retired `tools/urbi-compile-stdlib` bake in both IDF projects.
+- `components/esp32-idf-aux/` and the requirement on it.
+
+### Documentation
+
+- `docs/internals/ports.md`'s ESP32-S3 section rewritten for what
+  builds at this tag; `docs/release/port-build-flash-guide.md`,
+  `docs/release/hardware-validation.md`,
+  `docs/release/release-readiness.md`, `docs/release/test-tiers.md`,
+  `docs/internals/test-harness.md`, `docs/internals/build-system.md`,
+  `docs/README.md`, `README.md` and `CONTRIBUTING.md` updated to
+  match: all three boards build in CI (`cross-pico-repl`,
+  `cross-stm32f4`, `cross-esp32s3`).
+- The workspace-root design-risks register closes the event ring's
+  undocumented single-producer rule and the ESP32 part of the retired
+  API text sweep.
+
+### Measured on this build
+
+| Number | Value |
+|---|---|
+| Hosted ESP32-S3 archive (`build/xtensa-esp32s3-hosted/liburbi.a`, text / data / bss) | 166,340 / 8 / 4 bytes |
+| Bytecode-only ESP32-S3 archive (`build/xtensa-esp32s3-bytecode-only/liburbi.a`, text / data / bss) | 95,412 / 8 / 4 bytes |
+| Firmware `eye_demo.elf` (text / data / bss) | 360,009 / 134,998 / 1,101,407 bytes |
+| Firmware `eye_demo.bin` | 495,120 bytes |
+| Internal DRAM segment | 328,697 of 341,760 bytes (13,063 bytes slack) |
+| qemu boot heap (alloc live / gc live / heap top) | 48,748 / 26,992 / 71,768 bytes of a 131,072-byte arena (budget 98,304) |
+| qemu after one session request (alloc live / gc live / heap top) | 50,249 / 27,752 / 75,120 bytes |
+| qemu VM task stack high water | 24,440 of 65,536 bytes; the demo's stack set to 32 KB |
+| Runners | unit 594 / 0 (588 + 6 new); runtime (rt) 255 / 0; corpus (chk) 371 / 0 |
+| Board figures | pending the board log |
+
 ## v0.16.2-stm32f4 — 2026-10-14
 
 The STM32F429I-DISC1 Mandelbrot example is rebuilt on the re-founded
