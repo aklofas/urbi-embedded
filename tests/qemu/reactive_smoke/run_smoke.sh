@@ -49,8 +49,8 @@ echo "[run_smoke] launching idf.py qemu (UART -> ${UART_LOG})"
 # `-serial file:${UART_LOG}` would silently produce a 0-byte file.  The
 # reliable capture path is to redirect idf.py's stdout to the log file --
 # UART0 output appears there (interleaved with bootloader/idf.py status
-# lines, which the marker check at the bottom of this script skips
-# ).  </dev/null on stdin keeps the monitor from blocking on TTY.
+# lines, which the marker check at the bottom of this script skips).
+# </dev/null on stdin keeps the monitor from blocking on TTY.
 idf.py qemu --qemu-extra-args "-no-reboot" \
     </dev/null >"${UART_LOG}" 2>&1 &
 QEMU_PID=$!
