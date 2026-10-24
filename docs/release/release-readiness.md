@@ -34,7 +34,7 @@
 | Bar | Threshold | Current | Evidence | Last measured | Owner / blocker |
 |---|---|---|---|---|---|
 | GC pause (worst-case) | ≤1ms under representative reactive workload | not measured | n/a | n/a | **removed from v1.0 claims** — no representative workload defined; GC-pause SLA deferred to v1.x; see `docs/urbi-embedded-design-risks.md` |
-| Flash text size (per target) | <400KB | ARM CM7: ~123 KB; Pico CM0+: ~81 KB; ESP32-S3: ~120 KB; STM32F4 CM4F: <130 KB | `arm-none-eabi-size`/`xtensa-size` per target; per-target caps in `docs/internals/ports.md` | 2026-05-26 (CM7, Pico) | **passing-evidence** — all targets well under 400 KB cap; tracked per bring-up |
+| Flash text size (per target) | <400KB | ARM CM7: ~123 KB; Pico CM0+: ~81 KB; ESP32-S3: 166 KB (hosted `liburbi.a` text, v0.16.3-esp32s3); STM32F4 CM4F: <130 KB | `arm-none-eabi-size`/`xtensa-size` per target; per-target caps in `docs/internals/ports.md` | 2026-05-26 (CM7, Pico) | **passing-evidence** — all targets well under 400 KB cap; tracked per bring-up |
 | Heap budget (per target) | per `docs/internals/ports.md` | tracked per target | `hardware-validation.md` | per bring-up | **passing-evidence** — measured at each hardware bring-up; shiptest H1/H2/H3 procedures confirm |
 
 ## Hardware support
@@ -59,7 +59,7 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 | Component manifest version sync | gated | `make check-version-sync` | **passing-evidence** — continuous (since v0.8) |
 | Stdlib bytecode freshness | **gated (W5)** | `make test-stdlib-bytecode-fresh` — passes | **passing-evidence** — regenerate-diff gate added v0.10.6; see `tests/scripts/check-stdlib-fresh.sh` |
 | Freestanding-host gate | gated | `make test-freestanding-host` | **passing-evidence** — continuous (since v0.9.3) |
-| Cross-target cooperative REPL gates | the Pico, STM32F4 and ESP32-S3 examples build on this core (`make pico-repl-demo`, `make stm32f4-mandelbrot`, `make esp32s3-eye-demo`) | `cross-pico-repl`, `cross-stm32f4`, `cross-esp32s3` (CI); see `internals/ports.md` | **manual procedure** — ESP32/STM32 hardware REPL validated at bring-up (shiptest H1/H2/H3); other targets out of v1.0 scope |
+| Cross-target cooperative REPL gates | the Pico, STM32F4 and ESP32-S3 examples build on this core (`make pico-repl-demo`, `make stm32f4-mandelbrot`, `make esp32s3-eye-demo`) | `cross-pico-repl`, `cross-stm32f4`, `cross-esp32s3` (CI); see `internals/ports.md` | **manual procedure** — the ESP32-S3 session runs in the qemu smoke at v0.16.3-esp32s3, board log pending; the Pico's session hardware-validated at v0.16.1-pico (shiptest H1/H2/H3); other targets out of v1.0 scope |
 | Public doc scrub of workspace-private paths | gated | `make docs-check` w/ scrub check | **passing-evidence** — continuous |
 
 ## C API

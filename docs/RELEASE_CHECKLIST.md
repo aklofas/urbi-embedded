@@ -24,10 +24,12 @@ top-to-bottom; do not tag until every box is checked.
 The generic cross-compile presets (`arm-cortex-m0plus`, `arm-cortex-m4f`,
 `arm-cortex-m7`, `riscv32`) are not parked: `make cross-all` builds every
 one of them, full and bytecode-only, with the archive gate, on every
-push. Every hardware port (Pico, ESP32-S3, STM32F4) is still out of the
-build, parked until each is rebuilt on the re-founded runtime at its own
-tag. When a board comes back, so do these boxes: a re-flash of its demo
-and the evidence appended to `docs/release/hardware-validation.md`.
+push. Every hardware port (Pico, STM32F4, ESP32-S3) is rebuilt on the
+re-founded runtime and builds in CI (`cross-pico-repl`, `cross-stm32f4`,
+`cross-esp32s3`, the last with a qemu smoke). Each board's box is a
+re-flash of its demo and the evidence appended to
+`docs/release/hardware-validation.md`; the ESP32-S3's board log is
+pending.
 
 The boot-heap probe now has a real 32-bit number too, from the
 `arm-cortex-m4f` preset under qemu (`make test-probes-32bit`), alongside

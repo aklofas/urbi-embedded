@@ -105,8 +105,8 @@
      names the new target.
   4. Session: from picocom, `echo("hi")`, `1+1` and `Tracker.count`
      answer; `boot.stop()` freezes the crosshair;
-     `at (blob_seen?(var p)) echo(p.and(65535))` from the session
-     resumes it.
+     `at (blob_seen?(var p)) draw_crosshair(p.and(65535), p.shr(16).and(65535))`
+     from the session resumes it.
   5. Five minutes of tracking: the `stats:` line's live bytes stay flat
      within 1 KB of the first; no `OutOfMemoryError`, no reset, no
      task-watchdog warning.

@@ -55,7 +55,7 @@ For contributors building or modifying the C99 implementation.
 | x86_64 | Linux (glibc) | system GCC / Clang | gating CI |
 | ARM Cortex-M7 | STM32H7 (bare-metal) | `arm-none-eabi-gcc` | gating CI (cross-compile sanity) |
 | RISC-V rv32imc | ESP32-C3 (bare-metal) | `riscv64-unknown-elf-gcc` | gating CI (cross-compile sanity) |
-| Xtensa LX7 | ESP32-S3 | — | post-v1.0 |
+| Xtensa LX7 | ESP32-S3 (ESP32-S3-EYE) | `xtensa-esp32s3-elf-gcc` (ESP-IDF v6.0.1) | gating CI (`cross-esp32s3`: firmware build + qemu smoke); board log pending |
 
 Hardware-in-loop validation on physical STM32H7 and ESP32-C3 is a gate for the `v1.0.0` release. Cross-compile CI jobs verify that the code compiles clean for ARM and RISC-V on every commit; they do not run the test suite on hardware.
 

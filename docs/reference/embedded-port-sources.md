@@ -20,15 +20,15 @@ For per-silicon footprint + idiosyncrasy notes, see
 - **Repository:** `https://github.com/espressif/esp-idf.git`
 - **Pinned tag:** `v6.0.1`
 - **Local checkout path:** `tools/esp-idf/` (workspace root).
-- **Toolchain:** Bundled `xtensa-esp32s3-elf-gcc` 13.x via
+- **Toolchain:** Bundled `xtensa-esp32s3-elf-gcc` esp-15.2.0 via
   `tools/esp-idf-tools/`.
 - **First used by:** `v0.7.2-esp32` (2026-05-16).
 - **Notes:**
-  - `urbi` ESP-IDF managed component lives at `components/urbi/`; the
-    `urbi_aux` component is separate so applications can omit it.
+  - The ESP-IDF component lives at `components/esp32-idf/` and imports
+    the `liburbi.a` the repository Makefile builds with the
+    `xtensa-esp32s3` preset; there is no separate aux component.
   - The newlib shipped in ESP-IDF is **hosted**, not freestanding —
-    the `urbi` component must NOT pass `-ffreestanding`. `urbi_aux`
-    keeps the flag (the host-tool generator is freestanding-clean).
+    the preset's hosted shape does NOT pass `-ffreestanding`.
 
 ## STM32CubeF4 (STMicroelectronics)
 
