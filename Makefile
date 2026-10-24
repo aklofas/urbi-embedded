@@ -395,6 +395,31 @@ STM32_CROSS_CC  := $(shell sed -n 's/^CROSS_CC *:= *//p' presets/arm-cortex-m4f.
 stm32f4-mandelbrot: $(BUILDDIR)/urbi cross-arm-cortex-m4f-bytecode-only
 	$(MAKE) -C $(STM32_DEMO_DIR) CC=$(shell command -v $(STM32_CROSS_CC)) HAL_ROOT=$(HAL_ROOT)
 
+# --- the ESP32-S3-EYE demo ------------------------------------------------
+#
+# The ESP32-S3 archive is built by the ESP-IDF toolchain, which lives in
+# the IDF tools directory rather than on a plain PATH.  Every target below
+# runs inside the IDF export, so the preset's compiler, idf.py and
+# qemu-system-xtensa resolve the same way the firmware build resolves them.
+# IDF is taken from IDF_PATH, defaulting to the workspace-root tools/esp-idf
+# one directory above this repository; a missing IDF is an error, not a
+# skip.  The preset is not in PRESETS: releasetest and the cross matrix run
+# on hosts without this toolchain, and preset.mk makes a missing compiler
+# fatal by design.  CI builds it in the espressif/idf container.
+IDF_PATH       ?= $(abspath ../tools/esp-idf)
+IDF_TOOLS_PATH ?= $(abspath ../tools/esp-idf-tools)
+IDF_ENV := test -f "$(IDF_PATH)/export.sh" || \
+	    { echo "esp32s3: no ESP-IDF at $(IDF_PATH) (set IDF_PATH)"; exit 1; }; \
+	  export IDF_PATH="$(IDF_PATH)" IDF_TOOLS_PATH="$(IDF_TOOLS_PATH)"; . "$(IDF_PATH)/export.sh" >/dev/null 2>&1 || \
+	    { echo "esp32s3: sourcing $(IDF_PATH)/export.sh failed (IDF_TOOLS_PATH=$(IDF_TOOLS_PATH))"; exit 1; }
+.PHONY: esp32s3-archives
+esp32s3-archives:
+	@$(IDF_ENV); \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-hosted && \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-bytecode-only && \
+	  xtensa-esp32s3-elf-size --totals build/xtensa-esp32s3-hosted/liburbi.a | tail -1 && \
+	  xtensa-esp32s3-elf-size --totals build/xtensa-esp32s3-bytecode-only/liburbi.a | tail -1
+
 # A different compiler behind the same name rebuilds the archive.
 .PHONY: test-flagstamp-toolchain
 test-flagstamp-toolchain:
