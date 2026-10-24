@@ -137,10 +137,12 @@ A pasted picocom log plus the owner's word on the LCD:
 | --- | --- |
 | `liburbi.a` for the ESP32-S3, hosted, text / data / bss | 166,340 / 8 / 4 B |
 | `liburbi.a` for the ESP32-S3, bytecode-only, text / data / bss | 95,412 / 8 / 4 B |
-| Firmware `eye_demo.elf`, text / data / bss | 360,025 / 134,998 / 1,101,407 B |
-| Firmware `eye_demo.bin` | 495,136 B |
+| Firmware `eye_demo.elf`, text / data / bss | 360,009 / 134,998 / 1,101,407 B |
+| Firmware `eye_demo.bin` | 495,120 B |
 | Undefined symbols in the ELF | 3, all IDF linker hooks (none from the runtime, the port or the demo) |
-| Boot heap (qemu) | from the smoke |
+| Boot heap (qemu), alloc live / gc live / heap top | 48,748 / 26,992 / 71,768 B of a 131,072 B arena (budget 98,304 B) |
+| After one session request (qemu), alloc live / gc live / heap top | 50,249 / 27,752 / 75,120 B |
+| Task stack high water (qemu) | 24,440 B used of 65,536 B; `URBI_TASK_STACK` set to 36 KB |
 | Boot heap and live bytes over five minutes (board) | from the board log |
 
 ## Known limits

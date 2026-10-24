@@ -1,0 +1,10 @@
+menu "Reactive Smoke Configuration"
+    config URBI_ARENA_BYTES
+        int "urbi heap arena (bytes, internal SRAM)"
+        default 131072
+        range 65536 262144
+        help
+            The static arena the runtime allocates from, the same figure
+            the ESP32-S3-EYE demo uses so the smoke measures the board's
+            configuration.  The collector is told three quarters of it.
+endmenu

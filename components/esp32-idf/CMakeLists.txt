@@ -15,10 +15,14 @@ file(GLOB URBI_PORT_SRC "${CMAKE_CURRENT_LIST_DIR}/src/port/*.c")
 idf_component_register(
     SRCS ${URBI_PORT_SRC}
     INCLUDE_DIRS "${URBI_ROOT}/include" "${CMAKE_CURRENT_LIST_DIR}/src/port"
-    REQUIRES freertos esp_timer esp_system heap driver esp_driver_usb_serial_jtag log
+    REQUIRES freertos esp_timer esp_system heap driver esp_driver_usb_serial_jtag log esp_libc
 )
 add_library(liburbi STATIC IMPORTED GLOBAL)
 set_target_properties(liburbi PROPERTIES IMPORTED_LOCATION "${LIBURBI_ARCHIVE}")
+# The archive reaches stderr through esp_libc's __getreent; naming the
+# dependency puts esp_libc after the archive on the link line instead of
+# relying on another component to pull it in.
+target_link_libraries(liburbi INTERFACE idf::esp_libc)
 target_link_libraries(${COMPONENT_LIB} PUBLIC liburbi)
 # The port files include IDF headers that need GNU C11; the runtime archive
 # itself was built -std=c99 -Wpedantic by the Makefile.

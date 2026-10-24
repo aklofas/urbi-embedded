@@ -1190,3 +1190,16 @@ check-version-sync:
 
 .PHONY: test-unit test-probes test-bench test-embedding-guide test-flagstamp-toolchain
 .PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 force-flagstamp pico-repl-demo stm32f4-mandelbrot
+
+# The qemu smoke: the component's arena, a baked workload, the event queue
+# and a session, run under `idf.py qemu` against its marker file.
+SMOKE_DIR := tests/qemu/reactive_smoke
+.PHONY: esp32s3-smoke
+esp32s3-smoke: $(BUILDDIR)/urbi
+	@$(IDF_ENV); \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-hosted && \
+	  idf.py -C $(SMOKE_DIR) \
+	      -DURBI_HOST_BIN=$(abspath $(BUILDDIR)/urbi) \
+	      -DLIBURBI_ARCHIVE=$(abspath build/xtensa-esp32s3-hosted/liburbi.a) \
+	      build && \
+	  cd $(SMOKE_DIR) && QEMU_TIMEOUT_S=60 ./run_smoke.sh

@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# run_smoke.sh — QEMU reactive smoke harness.
+# run_smoke.sh — QEMU smoke harness.
 #
 # Boots the smoke binary under espressif/qemu (via `idf.py qemu`),
 # captures UART to a log file, then asserts each line in
 # expected_markers.txt appears in order via `grep -nF`.
+#
+# The path under test: the component's internal-SRAM arena opens a VM,
+# a workload baked at build time loads, three payload events go through
+# the port's queue and fire a watcher under urbi_step, and the eval
+# service answers one request on an in-memory transport.  The log also
+# carries the boot heap, the heap after the session and the task stack's
+# high-water mark, the figures the board must match.
 #
 # Exit codes:
 #   0 — all markers found in order ("SMOKE PASS")
