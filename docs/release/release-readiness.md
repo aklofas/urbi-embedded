@@ -34,7 +34,7 @@
 | Bar | Threshold | Current | Evidence | Last measured | Owner / blocker |
 |---|---|---|---|---|---|
 | GC pause (worst-case) | ≤1ms under representative reactive workload | not measured | n/a | n/a | **removed from v1.0 claims** — no representative workload defined; GC-pause SLA deferred to v1.x; see `docs/urbi-embedded-design-risks.md` |
-| Flash text size (per target) | <400KB | ARM CM7: ~123 KB; Pico CM0+: ~81 KB; ESP32-S3: 166 KB (hosted `liburbi.a` text, v0.16.3-esp32s3); STM32F4 CM4F: <130 KB | `arm-none-eabi-size`/`xtensa-size` per target; per-target caps in `docs/internals/ports.md` | 2026-05-26 (CM7, Pico) | **passing-evidence** — all targets well under 400 KB cap; tracked per bring-up |
+| Flash text size (per target) | <400KB | ARM CM7: ~123 KB; Pico CM0+: ~81 KB; ESP32-S3: 166 KB (hosted `liburbi.a` text, v0.16.3-esp32s3); STM32F4 CM4F: <130 KB | `arm-none-eabi-size`/`xtensa-size` per target; per-target caps in `docs/internals/ports.md` | 2026-05-26 (CM7, Pico); 2026-10-24 (ESP32-S3) | **passing-evidence** — all targets well under 400 KB cap; tracked per bring-up |
 | Heap budget (per target) | per `docs/internals/ports.md` | tracked per target | `hardware-validation.md` | per bring-up | **passing-evidence** — measured at each hardware bring-up; shiptest H1/H2/H3 procedures confirm |
 
 ## Hardware support
@@ -81,11 +81,13 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 | Compile-budget enforcement | yes | `docs/internals/repl-service.md` | **passing-evidence** — `urbi_realm_set_compile_budget` |
 | Per-session output isolation | yes | `docs/internals/repl-service.md` | **passing-evidence** — per-realm writer model |
 
-REPL is currently a parked feature (Phase 0 runtime-internals test cleanup
-removed the dedicated multi-client-stress and security-gate unit suites,
-along with the `repl-multi-client-stress` / `repl-security` CI jobs); the
-bars above reflect the remaining evidence, and the rest are unverified
-by automation pending v1.x re-attachment.
+The eval service runs on the Pico and ESP32-S3-EYE examples with its own
+unit suites (`test_repl_sessions`, `test_repl_outbuf`), and the networked
+server returned as `tools/urbi-server.c`. What the runtime-internals test
+cleanup removed is the dedicated multi-client-stress and security-gate
+unit suites, along with the `repl-multi-client-stress` / `repl-security`
+CI jobs; the bars above reflect the remaining evidence, and the rest are
+unverified by automation pending v1.x re-attachment.
 
 ## Reactive runtime
 

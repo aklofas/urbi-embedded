@@ -67,9 +67,9 @@ picocom -b 115200 /dev/ttyACM0
 ```
 
 The board's USB Serial/JTAG port carries the console and a REPL session
-together: every line is one JSON object, so `idf.py monitor` shows raw
-JSON and picocom is the client. `{"id":1,"op":"eval","code":"1+1"}`
-answers with `"value":"2"`. The LCD shows the camera feed with a
+together: once `app_main` starts, every line is one JSON object, so
+`idf.py monitor` shows raw JSON and picocom is the client.
+`{"id":1,"op":"eval","code":"1+1"}` answers with `"value":"2"`. The LCD shows the camera feed with a
 crosshair on a coloured object, and the BOOT button cycles the target
 colour. Full build, flash, wire and known-limits detail is in
 [the example's own README](../../examples/esp32/eye_demo/README.md).

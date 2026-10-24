@@ -92,13 +92,14 @@
 - **SDK:** ESP-IDF v6.0.1; `esp_video` 2.5.0 and `esp_cam_sensor` 2.6.0
   from the component registry.
 - **Firmware artifact:** `examples/esp32/eye_demo/build/eye_demo.bin`
-  built by `make esp32s3-eye-demo`; `eye_demo.elf` text 360,009 /
-  data 134,998 / bss 1,101,407 B; `eye_demo.bin` 495,120 B.
+  built by `make esp32s3-eye-demo`; `eye_demo.elf` text 360,169 /
+  data 135,046 / bss 1,101,871 B; `eye_demo.bin` 495,328 B.
 - **Flashing:** `make esp32s3-flash PORT=/dev/ttyACM0`; console and
   session on `picocom -b 115200 /dev/ttyACM0`.
 - **Smoke steps:**
   1. Boot heap: the `boot heap:` line shows `alloc live` under
-     49,152 B (48,748 B under qemu).
+     49,152 B (48,748 B under qemu). Record the `ready:` line in the
+     board log; there is no cap on it at this tag.
   2. Tracking: the LCD shows the camera feed with a crosshair following
      a coloured object; the `stats:` line's count rises.
   3. Button: the BOOT button cycles the target colour; the `stats:` line

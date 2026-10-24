@@ -47,10 +47,10 @@ one of these ports. Each entry below describes what builds now.
   collector paces against three quarters of it (98,304 bytes). The
   arena shares the internal DRAM segment with the display's 115,200-byte
   frame buffer, which is what caps it. The camera's frame buffers are
-  in the 8 MB PSRAM. The VM task's stack is 32 KB, from a qemu high
-  water of 24,440 bytes plus a margin.
-- **Console and session:** one USB Serial/JTAG port carries both. Every
-  line is one NDJSON object: the eval service's replies, and the
+  in the 8 MB PSRAM. The VM task's stack is 32 KB, from the qemu
+  smoke's high water of 24,440 bytes (not this workload) plus a margin.
+- **Console and session:** one USB Serial/JTAG port carries both. Once
+  `app_main` starts, every line is one NDJSON object: the eval service's replies, and the
   console text (the writer, the diag hook, and ESP_LOG through
   `esp_log_set_vprintf`) as `output` envelopes on the `console`
   channel.

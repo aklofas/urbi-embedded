@@ -62,7 +62,8 @@ against — see the Garbage collector section below.
 
 Declared in `include/urbi/repl.h`, which `<urbi/urbi.h>` does not pull in
 — an embedder that wants a REPL includes it itself.  The networked
-server is parked; these four are the cooperative core.
+server is the separate `tools/urbi-server.c`; these four are the
+cooperative core, which the Pico and ESP32-S3-EYE examples run.
 
 - `urbi_repl_serve_init`
 - `urbi_repl_register_transport`

@@ -7,7 +7,7 @@ The camera task finds the blob in C and posts it to a queue; the task that owns 
 The workload is [`main/eye_demo.u`](main/eye_demo.u); it is compiled on the host at build time, baked into the firmware as bytecode, and loaded into the main realm at boot.
 
 A REPL session runs on the board's USB Serial/JTAG port beside the workload.
-Every line on that port is one JSON object: the session's replies, and the board's own console text as `{"kind":"output","channel":"console","msg":"..."}` envelopes.
+Once `app_main` starts, every line on that port is one JSON object: the session's replies, and the board's own console text as `{"kind":"output","channel":"console","msg":"..."}` envelopes.
 
 The board exposes five verbs on `Lobby`:
 
@@ -93,11 +93,12 @@ The shim prints a banner with the runtime version, the arena line, one line per 
 arena <n> B, free internal heap <n> B
 boot heap: alloc live <n> B, gc live <n> B, heap top <n> B, budget <n> B, cycles <n>
 ready: alloc live <n> B, gc live <n> B, heap top <n> B, budget <n> B, cycles <n>
+free internal heap <n> B
 target: red
 stats: count <n>, target <name>, live <n> B, dropped <n>
 ```
 
-- `arena` is the runtime's static arena; `free internal heap` is what the IDF heap has left in internal SRAM at that moment, the headroom beside the arena.
+- `arena` is the runtime's static arena; `free internal heap` is what the IDF heap has left in internal SRAM at that moment, the headroom beside the arena. It prints again after `ready:`, once the peripherals hold their memory.
 - `alloc live` is the bytes the VM has requested from its allocator and not yet freed, read right after a full collection.
 - `gc live` is the collector's own view of what it holds live.
 - `heap top` is the arena's high-water mark. It includes the allocator's block headers, so it reads higher than `alloc live`.
@@ -108,12 +109,13 @@ stats: count <n>, target <name>, live <n> B, dropped <n>
 `target:` prints when the workload loads and on each press that changes the target.
 `stats:` prints every two seconds from the workload: the blobs seen, the current target, the VM's live bytes (not collected first, so it moves with the collector), and the records dropped.
 Runtime diagnostics print as `[E] msg`, `[W] msg`, `[I] msg` or `[D] msg`, and ESP-IDF log lines arrive framed the same way.
+An ESP-IDF log line over 255 bytes is truncated and sent; a console line whose escaped form outgrows the 512 B frame buffer is dropped whole and counted.
 
 ## Definition of done for this port
 
 A pasted picocom log plus the owner's word on the LCD:
 
-1. `boot heap: alloc live <n> B` under the cap the plan sets from the qemu figure.
+1. `boot heap: alloc live <n> B` under 49,152 B.
 2. The LCD shows the camera feed with a crosshair following a coloured object; the stats line's count rises.
 3. The BOOT button cycles the target colour; the stats line names the new target.
 4. From picocom: `echo("hi")`, `1+1`, `Tracker.count` answer; `boot.stop()` freezes the crosshair; `at (blob_seen?(var p)) draw_crosshair(p.and(65535), p.shr(16).and(65535))` from the session resumes it.
@@ -137,21 +139,25 @@ A pasted picocom log plus the owner's word on the LCD:
 | --- | --- |
 | `liburbi.a` for the ESP32-S3, hosted, text / data / bss | 166,340 / 8 / 4 B |
 | `liburbi.a` for the ESP32-S3, bytecode-only, text / data / bss | 95,412 / 8 / 4 B |
-| Firmware `eye_demo.elf`, text / data / bss | 360,009 / 134,998 / 1,101,407 B |
-| Firmware `eye_demo.bin` | 495,120 B |
+| Firmware `eye_demo.elf`, text / data / bss | 360,169 / 135,046 / 1,101,871 B |
+| Firmware `eye_demo.bin` | 495,328 B |
 | Undefined symbols in the ELF | 3, all IDF linker hooks (none from the runtime, the port or the demo) |
 | Boot heap (qemu), alloc live / gc live / heap top | 48,748 / 26,992 / 71,768 B of a 131,072 B arena (budget 98,304 B) |
-| After one session request (qemu), alloc live / gc live / heap top | 50,249 / 27,752 / 75,120 B |
-| Task stack high water (qemu) | 24,440 B used of 65,536 B; `URBI_TASK_STACK` set to 32 KB |
+| After one session request (qemu smoke, not this workload), alloc live / gc live / heap top | 50,249 / 27,752 / 75,120 B |
+| Task stack high water (qemu smoke, not this workload) | 24,440 B used of 65,536 B; `URBI_TASK_STACK` set to 32 KB |
 | Boot heap and live bytes over five minutes (board) | from the board log |
+
+The qemu smoke loads a one-line workload, so it gives no figure for this demo's `ready:` line, which also counts the verbs, the events, `eye_demo.u` and the session.
+Record the `ready:` line in the board log; there is no cap on it at this tag.
 
 ## Known limits
 
-- The bootloader's output and a panic's backtrace are not framed: they reach the port as plain text before or instead of the JSON lines.
+- The bootloader's output, the ESP-IDF startup log before `app_main` installs the console hook, and a panic's backtrace are not framed: they reach the port as plain text before or instead of the JSON lines.
+- A continuously busy VM yields one tick every ~100 ms so the idle task and the watchdog stay fed.
+- With no host reading the USB port, each console line waits up to the 100 ms deadline (in practice up to about twice that) and a pending reply stalls the VM loop by that much per iteration.
 - The port is always connected: closing picocom does not end the session, and a new picocom continues the same one.
 - The OV2640's auto exposure and white balance follow the room light; a target that tracks well in daylight may need its thresholds in `eye_demo.u` retuned under warm indoor light.
 - The display is 240x240, so `draw_crosshair` clamps both coordinates to 0..239; a session that passes a point off the panel sees the crosshair on the edge.
-- A console line longer than the transmit ring is dropped whole rather than split.
 
 ## File layout
 

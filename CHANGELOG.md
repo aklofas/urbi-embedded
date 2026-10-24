@@ -104,14 +104,14 @@ Wire format unchanged at v2.0 / `0x20`.
 |---|---|
 | Hosted ESP32-S3 archive (`build/xtensa-esp32s3-hosted/liburbi.a`, text / data / bss) | 166,340 / 8 / 4 bytes |
 | Bytecode-only ESP32-S3 archive (`build/xtensa-esp32s3-bytecode-only/liburbi.a`, text / data / bss) | 95,412 / 8 / 4 bytes |
-| Firmware `eye_demo.elf` (text / data / bss) | 360,009 / 134,998 / 1,101,407 bytes |
-| Firmware `eye_demo.bin` | 495,120 bytes |
-| Internal DRAM segment | 328,697 of 341,760 bytes (13,063 bytes slack) |
+| Firmware `eye_demo.elf` (text / data / bss) | 360,169 / 135,046 / 1,101,871 bytes |
+| Firmware `eye_demo.bin` | 495,328 bytes |
+| Internal DRAM segment | 328,745 of 341,760 bytes (13,015 bytes slack) |
 | qemu boot heap (alloc live / gc live / heap top) | 48,748 / 26,992 / 71,768 bytes of a 131,072-byte arena (budget 98,304) |
-| qemu after one session request (alloc live / gc live / heap top) | 50,249 / 27,752 / 75,120 bytes |
-| qemu VM task stack high water | 24,440 of 65,536 bytes; the demo's stack set to 32 KB |
+| qemu smoke, not this workload: after one session request (alloc live / gc live / heap top) | 50,249 / 27,752 / 75,120 bytes |
+| qemu smoke, not this workload: VM task stack high water | 24,440 of 65,536 bytes; the demo's stack set to 32 KB |
 | Runners | unit 594 / 0 (588 + 6 new); runtime (rt) 255 / 0; corpus (chk) 371 / 0 |
-| Board figures | pending the board log |
+| Board figures | pending the board log; the demo's `ready:` line is recorded there, with no cap at this tag |
 
 ## v0.16.2-stm32f4 — 2026-10-14
 
