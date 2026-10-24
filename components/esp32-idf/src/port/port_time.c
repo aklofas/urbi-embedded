@@ -1,14 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* ESP-IDF time source wrapper.
- *
- * Satisfies urbi_time_us_fn (include/urbi/urbi.h): returns monotonic
- * microseconds.  Install via urbi_set_clock_fn(vm, port_time_us).
- *
- * esp_timer_get_time() returns int64_t microseconds since boot; the cast
- * to uint64_t is safe (values are always non-negative for the lifetime of
- * the device — int64 monotonic from 0). */
-#include "esp_timer.h"
+/* The clock hook (urbi_set_clock): monotonic microseconds since boot from
+ * esp_timer_get_time.  The int64_t it returns is never negative, so the
+ * cast is exact. */
 #include <stdint.h>
+
+#include "esp_timer.h"
 
 #include "port_esp_idf.h"
 

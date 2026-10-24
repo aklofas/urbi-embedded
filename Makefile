@@ -681,6 +681,32 @@ test-port-stm32f4:
 	done
 	@echo "PASS: STM32F4 port host tests"
 
+# The ESP32-S3 component's host-runnable tests: the arena allocator, the
+# console framing and the event queue, compiled with the host compiler
+# against a pthread mock of the FreeRTOS queue and a recording stand-in
+# for urbi_inject_event.  The USB Serial/JTAG transport, the clock and
+# the IDF log hook have no honest host test; the qemu smoke and the
+# board gate are theirs.
+PORT_ESP32S3_DIR   := components/esp32-idf
+PORT_ESP32S3_TESTS := test_port_allocator test_port_console test_port_queue
+.PHONY: test-port-esp32s3
+test-port-esp32s3:
+	@mkdir -p build/port_esp32s3
+	@for t in $(PORT_ESP32S3_TESTS); do \
+	    case $$t in \
+	      test_port_allocator) src=port_allocator.c ;; \
+	      test_port_console)   src=port_console.c ;; \
+	      test_port_queue)     src=port_queue.c ;; \
+	    esac; \
+	    $(CC) -std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PORT_TEST=1 -DURBI_ARENA_BYTES='(160U*1024U)' \
+	        -D_POSIX_C_SOURCE=200809L \
+	        -Iinclude -I$(PORT_ESP32S3_DIR)/src/port -Itests/port_esp32s3 \
+	        tests/port_esp32s3/$$t.c tests/port_esp32s3/mock_freertos.c $(PORT_ESP32S3_DIR)/src/port/$$src \
+	        -lpthread -o build/port_esp32s3/$$t || exit 1; \
+	    ( ulimit -v 2000000; timeout 60 build/port_esp32s3/$$t ) || exit 1; \
+	done
+	@echo "PASS: ESP32-S3 port host tests"
+
 # `make test`: the frontend runner, the runtime runner, the layering
 # gate, the .chk corpus driven through the urbi binary, and the two shell
 # harnesses that cover what the corpus cannot see -- the REPL smoke run
@@ -858,7 +884,7 @@ RELEASETEST_PHASE1 := \
     test-wire-format-determinism \
     test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
-    test-chk-runner test-freestanding-host test-port-stm32f4 test-fuzz-smoke test-o2 test-embedding-guide \
+    test-chk-runner test-freestanding-host test-port-stm32f4 test-port-esp32s3 test-fuzz-smoke test-o2 test-embedding-guide \
     cross-all test-cross-missing-toolchain test-flagstamp-toolchain
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory

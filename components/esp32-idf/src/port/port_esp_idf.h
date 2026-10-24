@@ -1,107 +1,83 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* ESP-IDF port glue — function prototypes for urbi <-> ESP-IDF integration.
- *
- * Embedders include this header from their app_main / FreeRTOS task code and
- * pass the wrappers below into the corresponding urbi register / init hooks
- * (urbi_vm_init, urbi_set_writer, urbi_set_clock_fn, urbi_set_wake_fn, ...).
- *
- * Each wrapper has a signature compatible with the urbi public hook typedef
- * it satisfies (UVMAllocFn, urbi_writer_fn, ...).  See include/urbi/types.h
- * and include/urbi/urbi.h for the canonical typedefs. */
+/* ESP-IDF port glue for urbi: the arena allocator, the clock, the
+ * console framing, the writer and diag hooks, the event queue and the
+ * USB Serial/JTAG transport.  The application includes this header and
+ * hands the functions below to the runtime's hooks. */
 #ifndef URBI_PORT_ESP_IDF_H
 #define URBI_PORT_ESP_IDF_H
-
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
-
-/* FreeRTOS header pulled in so StackType_t is in scope for the
- * URBI_STACK_WORDS default below and for embedders that declare static
- * stack buffers (StackType_t[]) in their app_main. */
-#include "freertos/FreeRTOS.h"
-
+#include <stdarg.h>
+#include "urbi/types.h"
+#include "urbi/repl.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Forward declaration so the runtime-diag callback signature compiles
- * without dragging the full urbi public API into every TU that uses
- * port glue.  Embedders that actually call urbi_set_diag_fn will
- * #include <urbi/urbi.h> for the setter itself anyway. */
-struct UVM;
-
-/* URBI_STACK_WORDS: size of the urbi task's stack in StackType_t words.
- * Default is 8 KB / sizeof(StackType_t).  Embedders override via -D at
- * build time when they need a different stack budget.
- *
- * Exposed here (rather than file-local in port_freertos_task.c) so
- * app_main can declare a matching `static StackType_t buf[URBI_STACK_WORDS]`
- * for xTaskCreateStatic.  The matching default lives in port_freertos_task.c;
- * both #ifndef guards see the same effective value because this header is
- * included before that TU is compiled. */
-#ifndef URBI_STACK_WORDS
-#  define URBI_STACK_WORDS  (8U * 1024U / sizeof(StackType_t))
+/* The arena.  CONFIG_URBI_ARENA_BYTES comes from the project's Kconfig
+ * (examples/esp32/eye_demo/main/Kconfig.projbuild); the host tests define
+ * URBI_ARENA_BYTES directly. */
+#ifndef URBI_ARENA_BYTES
+#  ifdef CONFIG_URBI_ARENA_BYTES
+#    define URBI_ARENA_BYTES CONFIG_URBI_ARENA_BYTES
+#  else
+#    define URBI_ARENA_BYTES (160U * 1024U)
+#  endif
 #endif
+void    *port_alloc(void *ptr, size_t nbytes, void *ud);      /* UVMAllocFn */
+size_t   port_alloc_live_bytes(void);     /* requested bytes outstanding: the figure the 48 KB cap caps */
+size_t   port_alloc_heap_top(void);       /* bump high-water mark, headers included */
+size_t   port_alloc_heap_size(void);
+size_t   port_alloc_count(void);
+size_t   port_alloc_free_count(void);
+size_t   port_alloc_freelist_hits(void);
+size_t   port_alloc_last_failed_request(void);
 
-/* PSRAM-backed allocator hook.  Signature matches UVMAllocFn
- * (include/urbi/types.h) — pass directly to urbi_vm_init's alloc_fn slot.
- *
- * Uses MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT.  On boards without PSRAM
- * (or with PSRAM disabled in sdkconfig) heap_caps_malloc returns NULL and
- * urbi_vm_init will fail allocation.  For internal-SRAM-only boards
- * (~64 KB heap, ~50 ns access vs ~150 ns PSRAM through the cache), write
- * a parallel wrapper using MALLOC_CAP_INTERNAL. */
-void *port_psram_alloc(void *ptr, size_t nbytes, void *ud);
+uint64_t port_time_us(void *ud);                                /* clock hook: esp_timer_get_time */
 
-/* Monotonic-microseconds time source.  Signature matches urbi_time_us_fn
- * (include/urbi/urbi.h) — pass to urbi_set_clock_fn.  Backed by
- * esp_timer_get_time(); resolution is 1 µs, wrap is ~292 000 years. */
-uint64_t port_time_us(void *ud);
+/* Console framing.  Everything the shim prints goes out as one NDJSON
+ * output envelope per line on the "console" channel, through the sink
+ * the shim installs (the USB Serial/JTAG transport's raw write).  A line
+ * is never split across two envelopes; a line the sink cannot take whole
+ * within its deadline is dropped whole. */
+typedef int (*port_console_sink_fn)(const void *buf, size_t n);  /* returns bytes accepted */
+void     port_console_init(port_console_sink_fn sink);
+void     port_console_begin(void);
+void     port_console_part(const char *s, size_t n);
+void     port_console_end(void);
+void     port_console_write(const char *s, size_t n);
+void     port_console_puts(const char *s);
+int      port_console_vprintf(const char *fmt, va_list ap);  /* vprintf_like_t for esp_log_set_vprintf */
+uint32_t port_console_dropped_lines(void);
 
-/* Channel-dispatching writer.  Signature matches urbi_writer_fn
- * (include/urbi/urbi.h) — pass to urbi_set_writer.  Routes "cerr" through
- * ESP_LOGE, "clog" through ESP_LOGI, all other channels through printf
- * (UART/USB-CDC console). */
-void port_writer(void *ud,
-                 const char *channel, size_t channel_len,
-                 const char *msg,     size_t msg_len,
-                 uint64_t ts_us);
+void     port_writer(void *ud, const char *chan, size_t chan_len, const char *msg, size_t msg_len);
+void     port_diag(struct UVM *vm, void *ud, int level, const char *msg, size_t len);
 
-/* ISR-context predicate.  Signature matches the predicate type accepted by
- * urbi_set_isr_check_fn(vm, fn, ud) — `bool (*)(void *)` — pass directly.
- * Backed by xPortInIsrContext(); returns true when called from an ESP-IDF
- * ISR (including nested ISR dispatch). */
-bool port_in_isr(void *ud);
+/* The event queue: the one way the camera task and the button interrupt
+ * reach the VM.  Only the task that calls port_queue_drain injects, so
+ * the runtime's single-producer ring sees one producer. */
+typedef struct {
+    urbi_event_id_t id;
+    uint64_t        payload;    /* 0 = no payload; else the first 8 bytes the script receives as an Integer */
+    uint8_t         has_payload;
+} port_event_rec;
+int      port_queue_init(size_t depth);                        /* 0 ok, -1 no memory */
+int      port_queue_post(const port_event_rec *rec);           /* from a task; 0 ok, -1 full (counted, never blocks) */
+int      port_queue_post_from_isr(const port_event_rec *rec);  /* from an interrupt; same contract */
+/* Injects every queued record and returns the count.  The record's payload
+ * buffer is always passed; with has_payload clear it goes with n = 0, so
+ * the runtime copies nothing. */
+size_t   port_queue_drain(struct UVM *vm);
+int      port_queue_wait(uint32_t timeout_ms);                 /* blocks until a record is posted or the timeout; 1 posted, 0 timeout */
+uint32_t port_queue_dropped(void);
+uint32_t port_queue_inject_failures(void);                     /* failed urbi_inject_event calls during drain */
 
-/* FreeRTOS task entry that drives urbi_step in a budget-bounded loop.
- * Pass to xTaskCreate / xTaskCreateStatic as the task entry; `arg` must
- * be the `struct UVM *` to step.  Parks on a task-notification when the
- * VM is QUIESCENT / WAKE_AT; calls esp_restart on URBI_STEP_FATAL.
- *
- * Compile-time tunables: URBI_STACK_WORDS (default 8 KB / sizeof(StackType_t))
- * and URBI_STEP_BUDGET (default 256).  Override via -D... at build time. */
-void port_urbi_task_body(void *arg);
-
-/* Wake-from-injection callback.  Signature matches urbi_wake_fn
- * (include/urbi/urbi.h:612) — `void (*)(void *ud)`.  `ud` must point to
- * a TaskHandle_t for the urbi task.  ISR-safe (dispatches via
- * xPortInIsrContext + vTaskNotifyGiveFromISR + portYIELD_FROM_ISR).
- * Install via urbi_set_wake_fn(vm, port_wake_from_inject, &urbi_task_handle). */
-void port_wake_from_inject(void *ud);
-
-/* Runtime diagnostic channel routed to ESP_LOG.  Signature matches
- * urbi_diag_fn (include/urbi/urbi.h) — pass directly to urbi_set_diag_fn.
- * Maps URBI_LOG_DEBUG/INFO/WARN/ERROR to ESP_LOGI/I/W/E with the
- * "urbi-runtime" tag.  vsnprintf into a 192-byte stack buffer; truncates
- * silently past that.
- *
- * Without this (or some equivalent), the runtime's URBI_LOG_WARN messages
- * — watcher body throws, spawn OOM, watchdog warnings — drop on the floor
- * because the host_log_fn default is NULL with no script-side sink. */
-void port_diag_to_esp(struct UVM *vm, void *ud, int level, const char *fmt, ...);
+/* The USB Serial/JTAG byte stream as a UTransport. */
+int      port_usb_serial_jtag_init(size_t rx_buf, size_t tx_buf, uint32_t write_deadline_ms);  /* 0 ok */
+void     port_usb_serial_jtag_vtable(UTransport *out);
+int      port_usb_serial_jtag_raw_write(const void *buf, size_t n);  /* the console sink */
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* URBI_PORT_ESP_IDF_H */
+#endif
