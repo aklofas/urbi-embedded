@@ -21,7 +21,7 @@ extern "C" {
 #  ifdef CONFIG_URBI_ARENA_BYTES
 #    define URBI_ARENA_BYTES CONFIG_URBI_ARENA_BYTES
 #  else
-#    define URBI_ARENA_BYTES (160U * 1024U)
+#    define URBI_ARENA_BYTES 131072U
 #  endif
 #endif
 void    *port_alloc(void *ptr, size_t nbytes, void *ud);      /* UVMAllocFn */

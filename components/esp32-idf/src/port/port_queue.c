@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
@@ -30,15 +31,17 @@ int port_queue_init(size_t depth)
 int port_queue_post(const port_event_rec *rec)
 {
     if (xQueueSend(s_q, rec, 0) == pdTRUE) return 0;
-    s_dropped++;
+    __atomic_add_fetch(&s_dropped, 1U, __ATOMIC_RELAXED);
     return -1;
 }
 
-int port_queue_post_from_isr(const port_event_rec *rec)
+/* In IRAM: the button interrupt is registered with ESP_INTR_FLAG_IRAM and
+ * may run while the flash cache is off. */
+int IRAM_ATTR port_queue_post_from_isr(const port_event_rec *rec)
 {
     BaseType_t woken = pdFALSE;
     if (xQueueSendFromISR(s_q, rec, &woken) == pdTRUE) return 0;
-    s_dropped++;
+    __atomic_add_fetch(&s_dropped, 1U, __ATOMIC_RELAXED);
     return -1;
 }
 
@@ -67,7 +70,7 @@ int port_queue_wait(uint32_t timeout_ms)
 
 uint32_t port_queue_dropped(void)
 {
-    return s_dropped;
+    return __atomic_load_n(&s_dropped, __ATOMIC_RELAXED);
 }
 
 uint32_t port_queue_inject_failures(void)
