@@ -7,7 +7,8 @@
 set(URBI_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(LIBURBI_ARCHIVE "${URBI_ROOT}/build/xtensa-esp32s3-hosted/liburbi.a"
     CACHE FILEPATH "The archive to link (make cross-xtensa-esp32s3-hosted inside the IDF environment)")
-if (NOT EXISTS "${LIBURBI_ARCHIVE}")
+# IDF's early requirements pass does not receive -DLIBURBI_ARCHIVE; only the real configure checks.
+if (NOT CMAKE_BUILD_EARLY_EXPANSION AND NOT EXISTS "${LIBURBI_ARCHIVE}")
     message(FATAL_ERROR "${LIBURBI_ARCHIVE} is missing: run `make esp32s3-archives` at the repository root")
 endif ()
 file(GLOB URBI_PORT_SRC "${CMAKE_CURRENT_LIST_DIR}/src/port/*.c")
