@@ -139,7 +139,7 @@ A pasted picocom log plus the owner's word on the LCD:
 | `liburbi.a` for the ESP32-S3, bytecode-only, text / data / bss | 95,412 / 8 / 4 B |
 | Firmware `eye_demo.elf`, text / data / bss | 360,025 / 134,998 / 1,101,407 B |
 | Firmware `eye_demo.bin` | 495,136 B |
-| Undefined symbols in the ELF | 0 |
+| Undefined symbols in the ELF | 3, all IDF linker hooks (none from the runtime, the port or the demo) |
 | Boot heap (qemu) | from the smoke |
 | Boot heap and live bytes over five minutes (board) | from the board log |
 

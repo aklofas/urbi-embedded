@@ -21,6 +21,7 @@
 #include "eye_display.h"
 #include "eye_button.h"
 #include "detect_blob_chroma.h"
+#include "eye_clamp.h"
 #include "eye_demo_baked.h"
 
 #define STEP_BUDGET      256u
@@ -35,10 +36,8 @@
 #define URBI_TASK_STACK  (24u * 1024u)   /* set from the qemu stack measurement; floor 16 KB */
 #define ARENA_BYTES      ((size_t)CONFIG_URBI_ARENA_BYTES)
 
-/* The panel is 240x240; a session can pass anything. */
-static int clamp240(int v) { return v < 0 ? 0 : v > 239 ? 239 : v; }
 static int c_draw_crosshair(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{ (void)vm; (void)self; (void)nargs; display_set_crosshair(clamp240((int)urbi_value_as_int(args[0])), clamp240((int)urbi_value_as_int(args[1]))); *out = urbi_make_nil(); return UEXEC_OK; }
+{ (void)vm; (void)self; (void)nargs; display_set_crosshair(eye_clamp240((int)urbi_value_as_int(args[0])), eye_clamp240((int)urbi_value_as_int(args[1]))); *out = urbi_make_nil(); return UEXEC_OK; }
 static int c_set_target_chroma(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 { (void)vm; (void)self; (void)nargs; chroma_target_t t = { (uint8_t)urbi_value_as_int(args[0]), (uint8_t)urbi_value_as_int(args[1]), (uint8_t)urbi_value_as_int(args[2]) }; eye_camera_set_target(t); *out = urbi_make_nil(); return UEXEC_OK; }
 static int c_log(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)

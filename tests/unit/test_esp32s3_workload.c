@@ -1,14 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* The eye demo's workload on the host: a blob payload moves the crosshair
  * and counts, two presses inside the debounce window cycle the target once,
- * an off-panel blob is clamped by the stand-in the way the board's native
- * clamps, boot.stop() from a session leaves later blobs unobserved, a
- * session request past the compile budget is refused and the session
- * survives, and ten blobs return to the same live bytes. */
+ * an off-panel blob is clamped by the board's own clamp, boot.stop() from
+ * a session leaves later blobs unobserved, a session request past the
+ * compile budget is refused and the session survives, and ten blobs
+ * return to the same live bytes. */
 #include "utest.h"
 #include "urbi/urbi.h"
 #include "urbi/repl.h"
 #include "repl/urepl_buffer_transport.h"
+#include "../../examples/esp32/eye_demo/main/eye_clamp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,9 +32,8 @@ static uint64_t fake_clock(void *ud) { (void)ud; return s_now_us; }
 
 static long s_crosshairs, s_targets; static int s_cx, s_cy, s_dominant;
 static char s_last_log[256];
-static int clamp240(int v) { return v < 0 ? 0 : v > 239 ? 239 : v; }
 static int c_draw_crosshair(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
-{ (void)vm; (void)self; (void)nargs; s_crosshairs++; s_cx = clamp240((int)urbi_value_as_int(args[0])); s_cy = clamp240((int)urbi_value_as_int(args[1])); *out = urbi_make_nil(); return UEXEC_OK; }
+{ (void)vm; (void)self; (void)nargs; s_crosshairs++; s_cx = eye_clamp240((int)urbi_value_as_int(args[0])); s_cy = eye_clamp240((int)urbi_value_as_int(args[1])); *out = urbi_make_nil(); return UEXEC_OK; }
 static int c_set_target_chroma(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 { (void)vm; (void)self; (void)nargs; s_targets++; s_dominant = (int)urbi_value_as_int(args[0]); *out = urbi_make_nil(); return UEXEC_OK; }
 static int c_log(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -124,8 +124,10 @@ static void a_blob_moves_the_crosshair_and_counts(void)
 static void an_off_panel_blob_is_clamped(void)
 {
     Board b; board_open(&b); board_load(&b); run_quiet(&b);
-    inject_blob(&b, 65535, 999, 1);          /* x wraps to 65535 in 16 bits: the stand-in clamps as the board does */
+    inject_blob(&b, 300, 65535, 1);          /* both off the panel; 65535 is the largest y the packing carries */
     UASSERT_EQ(s_cx, 239); UASSERT_EQ(s_cy, 239);
+    UASSERT_EQ(int_global(&b, "x"), 300);    /* the script keeps the unclamped values */
+    UASSERT_EQ(int_global(&b, "y"), 65535);
     urbi_close(b.vm);
 }
 static void two_presses_inside_200ms_cycle_once(void)
