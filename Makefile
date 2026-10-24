@@ -420,6 +420,20 @@ esp32s3-archives:
 	  xtensa-esp32s3-elf-size --totals build/xtensa-esp32s3-hosted/liburbi.a | tail -1 && \
 	  xtensa-esp32s3-elf-size --totals build/xtensa-esp32s3-bytecode-only/liburbi.a | tail -1
 
+ESP32_DEMO_DIR := examples/esp32/eye_demo
+PORT ?= /dev/ttyACM0
+.PHONY: esp32s3-eye-demo esp32s3-flash
+esp32s3-eye-demo: $(BUILDDIR)/urbi
+	@$(IDF_ENV); \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-hosted && \
+	  idf.py -C $(ESP32_DEMO_DIR) \
+	      -DURBI_HOST_BIN=$(abspath $(BUILDDIR)/urbi) \
+	      -DLIBURBI_ARCHIVE=$(abspath build/xtensa-esp32s3-hosted/liburbi.a) \
+	      build && \
+	  xtensa-esp32s3-elf-size $(ESP32_DEMO_DIR)/build/eye_demo.elf
+esp32s3-flash:
+	@$(IDF_ENV); idf.py -C $(ESP32_DEMO_DIR) -p $(PORT) flash
+
 # A different compiler behind the same name rebuilds the archive.
 .PHONY: test-flagstamp-toolchain
 test-flagstamp-toolchain:

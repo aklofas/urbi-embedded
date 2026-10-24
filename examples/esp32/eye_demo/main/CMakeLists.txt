@@ -1,67 +1,25 @@
-# eye_demo main component.
-#
-# SRCS list grows phase-by-phase:
-#   Phase 3:               eye_camera.c
-#   Phase 4:               eye_display.c
-#   T36:                   eye_button.c
-#   T38:                   eye_demo_main.c (stub; T40 fills in app_main)
-
 idf_component_register(
-    SRCS
-        "eye_camera.c"
-        "eye_display.c"
-        "eye_button.c"
-        "eye_demo_main.c"
-    INCLUDE_DIRS
-        "."
-        "${CMAKE_CURRENT_BINARY_DIR}"
-    REQUIRES
-        esp32-idf
-        esp32-idf-aux
-        espressif__esp_video
-        espressif__esp_cam_sensor
-        freertos
-        esp_timer
-        esp_lcd
-        driver
+    SRCS "eye_camera.c" "eye_display.c" "eye_button.c" "eye_demo_main.c"
+    INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
+    REQUIRES esp32-idf espressif__esp_video espressif__esp_cam_sensor freertos esp_timer esp_lcd driver
 )
-
-# === Bytecode pre-bake step =========================================
-#
-# Compile eye_demo.u to a C header containing a const uint8_t array
-# via tools/urbi-compile-stdlib --to-header (added in v0.7.0 / M7 Wave 1).
-# The generated header lives in the build directory and is included
-# from eye_demo_main.c at T40 (extern const uint8_t eye_demo_bytecode[];
-# extern const size_t eye_demo_bytecode_size;).
-#
-# Tool location: the worktree root sits three levels up from
-# examples/esp32/eye_demo/ (this project's CMAKE_SOURCE_DIR).  The
-# urbi-compile-stdlib binary is built host-side as part of the main
-# urbi-embedded build; ESP-IDF cross-compilation does not rebuild it.
-# If the binary is missing or stale, rebuild it from the worktree root
-# with `make tools/urbi-compile-stdlib` before running idf.py.
-#
-# Custom-command + add_dependencies live AFTER idf_component_register
-# because ESP-IDF invokes each component CMakeLists.txt twice — once in
-# requirements-scripting mode where add_custom_command is forbidden, and
-# once in the real build pass where ${COMPONENT_LIB} exists.  Placing
-# them after idf_component_register skips the scripting pass cleanly.
-set(URBI_COMPILE_TOOL "${CMAKE_SOURCE_DIR}/../../../tools/urbi-compile-stdlib")
-set(BC_HEADER "${CMAKE_CURRENT_BINARY_DIR}/eye_demo_bytecode.h")
-
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
+# The workload is compiled on the host at build time and baked into a
+# header the firmware loads with urbi_load.
+set(URBI_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../..")
+set(URBI_HOST_BIN "${URBI_ROOT}/build/host/urbi"
+    CACHE FILEPATH "The host urbi binary that bakes the workload (make urbi-bin)")
+if (NOT EXISTS "${URBI_HOST_BIN}")
+    message(FATAL_ERROR "${URBI_HOST_BIN} is missing: run `make urbi-bin` at the repository root")
+endif ()
+set(BAKED_HEADER "${CMAKE_CURRENT_BINARY_DIR}/eye_demo_baked.h")
 add_custom_command(
-    OUTPUT  ${BC_HEADER}
-    COMMAND ${URBI_COMPILE_TOOL} --to-header
-            -i ${CMAKE_CURRENT_SOURCE_DIR}/eye_demo.u
-            -o ${BC_HEADER}
-            --symbol eye_demo_bytecode
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/eye_demo.u
-            ${URBI_COMPILE_TOOL}
-    COMMENT "Baking eye_demo.u -> eye_demo_bytecode.h"
-    VERBATIM
-)
-add_custom_target(eye_demo_bytecode_h DEPENDS ${BC_HEADER})
-
-# Ensure the bake step runs before the component library compiles —
-# eye_demo_main.c #includes eye_demo_bytecode.h.
-add_dependencies(${COMPONENT_LIB} eye_demo_bytecode_h)
+    OUTPUT "${BAKED_HEADER}"
+    COMMAND ${CMAKE_COMMAND} -DURBI=${URBI_HOST_BIN} -DIN=${CMAKE_CURRENT_LIST_DIR}/eye_demo.u
+            -DOUT=${BAKED_HEADER} -DSYM=eye_demo_wire
+            -P ${URBI_ROOT}/components/esp32-idf/bake.cmake
+    DEPENDS "${CMAKE_CURRENT_LIST_DIR}/eye_demo.u" "${URBI_ROOT}/components/esp32-idf/bake.cmake" "${URBI_HOST_BIN}"
+    COMMENT "Baking eye_demo.u"
+    VERBATIM)
+add_custom_target(eye_demo_bake DEPENDS "${BAKED_HEADER}")
+add_dependencies(${COMPONENT_LIB} eye_demo_bake)

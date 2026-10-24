@@ -1,18 +1,19 @@
 menu "Eye Demo Configuration"
-
-config EYE_DEMO_ENABLE_CAMERA
-    bool "Enable camera (DVP + OV2640) capture path"
-    default y
-    help
-        Enables esp_video_init() + V4L2 DVP capture in eye_camera_init().
-        When disabled, eye_camera_init() is a runtime no-op: the camera
-        task never starts, no blob events are injected into urbi, and
-        the display blits a static fill (or whatever the last frame was).
-        Button + reactive runtime + urbi VM still run unaffected.
-
-        Disable this on hardware where esp_video / esp32-camera /
-        i2c_new_master_bus crashes inside ESP-IDF's interrupt allocator
-        (see docs/urbi-embedded-design-risks.md "S3 + IDF v6 i2c intr_alloc
-        incompatibility" for the open vendor issue and affected silicon).
-
+    config EYE_DEMO_ENABLE_CAMERA
+        bool "Enable the OV2640 camera"
+        default y
+        help
+            Off, the demo runs the display, the button, the session and
+            the reactive workload without a camera: a smoke test on an
+            S3 board that is not the EYE.
+    config URBI_ARENA_BYTES
+        int "urbi heap arena (bytes, internal SRAM)"
+        default 163840
+        range 65536 262144
+        help
+            The static arena the runtime allocates from.  The collector
+            is told three quarters of it as its budget; the rest covers
+            the allocator's block headers and the memory the collector
+            does not track.  The boot log prints the free internal heap
+            beside it so the headroom is visible.
 endmenu

@@ -1,110 +1,24 @@
-# urbi-embedded as an ESP-IDF managed component.
-#
-# ############################################################
-# # PARKED.  DO NOT BUILD THIS UNTIL ITS TAG REBUILDS IT.    #
-# ############################################################
-#
-# The core re-foundation replaced the runtime these globs describe.  Ten of
-# the per-subsystem globs below (vm, gc, sched, watcher, event, tag,
-# changed, value, runtime, realm, object) name directories that no longer
-# exist, and src/rt/, src/util/ and src/host/ are missing entirely.  A glob
-# over a missing directory is EMPTY, not an error, so this file would
-# quietly build a component with no runtime in it and fail at link with a
-# wall of undefined symbols.
-#
-# idf_component.yml carries the current version because check-version-sync
-# pins it to the release tag; the version number is not a claim that this
-# file works.  Its own tag rewrites the globs against the Makefile's source
-# lists and re-validates on silicon.
-#
-# Mirrors the host Makefile SRC variable: globs every src/ subdir that
-# contributes to liburbi.a (core), excludes src/urbi_aux.c (separate
-# liburbi_aux.a archive — embedders opt in independently via the aux
-# header / extra link), and excludes test code.
-#
-# Port glue under components/esp32-idf/src/port/ lands incrementally in Phase 2
-# of the v0.7.2-esp32 plan (T14-T19).  The glob below picks up new port_*.c
-# files as they drop into place — subsequent tasks only add files, not
-# CMakeLists.txt entries.
-
-set(URBI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-
-# Root src/ — everything except the aux TU (which lives in its own archive).
-file(GLOB URBI_SRC_ROOT "${URBI_ROOT}/src/*.c")
-list(REMOVE_ITEM URBI_SRC_ROOT "${URBI_ROOT}/src/urbi_aux.c")
-
-# Per-subsystem globs (mirror Makefile §SRC).
-file(GLOB URBI_SRC_LEX     "${URBI_ROOT}/src/lex/*.c")
-file(GLOB URBI_SRC_PARSE   "${URBI_ROOT}/src/parse/*.c")
-file(GLOB URBI_SRC_EMIT    "${URBI_ROOT}/src/emit/*.c")
-file(GLOB URBI_SRC_VM      "${URBI_ROOT}/src/vm/*.c")
-file(GLOB URBI_SRC_GC      "${URBI_ROOT}/src/gc/*.c")
-file(GLOB URBI_SRC_SCHED   "${URBI_ROOT}/src/sched/*.c")
-file(GLOB URBI_SRC_WATCHER "${URBI_ROOT}/src/watcher/*.c")
-file(GLOB URBI_SRC_EVENT   "${URBI_ROOT}/src/event/*.c")
-file(GLOB URBI_SRC_TAG     "${URBI_ROOT}/src/tag/*.c")
-file(GLOB URBI_SRC_CHANGED "${URBI_ROOT}/src/changed/*.c")
-file(GLOB URBI_SRC_MODULE  "${URBI_ROOT}/src/chunk/*.c")
-file(GLOB URBI_SRC_VALUE   "${URBI_ROOT}/src/value/*.c")
-file(GLOB URBI_SRC_RUNTIME "${URBI_ROOT}/src/runtime/*.c")
-file(GLOB URBI_SRC_REALM   "${URBI_ROOT}/src/realm/*.c")
-file(GLOB URBI_SRC_OBJECT  "${URBI_ROOT}/src/object/*.c")
-file(GLOB URBI_SRC_STDLIB  "${URBI_ROOT}/src/stdlib/*.c")
-
-# ESP-IDF port glue (this component's own src/port/ — not under URBI_ROOT).
-file(GLOB URBI_SRC_PORT    "${CMAKE_CURRENT_SOURCE_DIR}/src/port/*.c")
-
-set(SOURCES
-    ${URBI_SRC_ROOT}
-    ${URBI_SRC_LEX}
-    ${URBI_SRC_PARSE}
-    ${URBI_SRC_EMIT}
-    ${URBI_SRC_VM}
-    ${URBI_SRC_GC}
-    ${URBI_SRC_SCHED}
-    ${URBI_SRC_WATCHER}
-    ${URBI_SRC_EVENT}
-    ${URBI_SRC_TAG}
-    ${URBI_SRC_CHANGED}
-    ${URBI_SRC_MODULE}
-    ${URBI_SRC_VALUE}
-    ${URBI_SRC_RUNTIME}
-    ${URBI_SRC_REALM}
-    ${URBI_SRC_OBJECT}
-    ${URBI_SRC_STDLIB}
-    ${URBI_SRC_PORT}
-)
-
+# urbi-embedded as an ESP-IDF component: the port glue in src/port/ plus
+# the archive the repository Makefile builds for the xtensa-esp32s3 preset.
+# The runtime is not compiled here: `make esp32s3-eye-demo` (or
+# `make esp32s3-archives`) builds liburbi.a with the same toolchain idf.py
+# uses, and this component links it.  A project that wants the component
+# alone must build that archive first; the error below says how.
+set(URBI_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+set(LIBURBI_ARCHIVE "${URBI_ROOT}/build/xtensa-esp32s3-hosted/liburbi.a"
+    CACHE FILEPATH "The archive to link (make cross-xtensa-esp32s3-hosted inside the IDF environment)")
+if (NOT EXISTS "${LIBURBI_ARCHIVE}")
+    message(FATAL_ERROR "${LIBURBI_ARCHIVE} is missing: run `make esp32s3-archives` at the repository root")
+endif ()
+file(GLOB URBI_PORT_SRC "${CMAKE_CURRENT_LIST_DIR}/src/port/*.c")
 idf_component_register(
-    SRCS ${SOURCES}
-    INCLUDE_DIRS
-        "${URBI_ROOT}/include"
-        "${URBI_ROOT}/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/port"
-    REQUIRES freertos esp_timer esp_system heap
+    SRCS ${URBI_PORT_SRC}
+    INCLUDE_DIRS "${URBI_ROOT}/include" "${CMAKE_CURRENT_LIST_DIR}/src/port"
+    REQUIRES freertos esp_timer esp_system heap driver esp_driver_usb_serial_jtag log
 )
-
-target_compile_options(${COMPONENT_LIB} PRIVATE
-    -std=c99 -Wall -Wextra -mlongcalls  # NOTE: -ffreestanding removed; gates urbi_chunk_from_bytes + stdlib_boot via __STDC_HOSTED__ on hosted ESP-IDF newlib path
-    # -Wpedantic is intentionally OFF for the urbi component on ESP-IDF.  Three
-    # sources of unfixable noise flood the build log otherwise (hundreds of
-    # lines, drowning serial output during on-device debugging):
-    #   1. _Static_assert (C11, not C99) — used everywhere for layout pins
-    #   2. #include_next — from ESP-IDF's OWN platform_include/{assert,stdio,time}.h
-    #   3. computed goto + address-of-label — deliberate perf opt in src/vm/uvm.c
-    # Host Makefile keeps -Wpedantic on (without -Werror) for new-code review,
-    # but the IDF build path treats it as cosmetic noise.
-    -Wno-pedantic
-)
-
-# Port-glue TUs that include ESP-IDF headers (esp_log.h, esp_timer.h, etc.)
-# need IDF's default language standard (gnu23) because those headers use
-# C11+ _Static_assert and GNU unnamed-union extensions that the urbi core's
-# -std=c99 -Wpedantic rejects with hard parse errors.
-#
-# We override -std=c99 on a per-source basis for the port wrappers; the rest
-# of the urbi component (core C99 sources) keeps the strict mode above.
-set_source_files_properties(
-    ${URBI_SRC_PORT}
-    PROPERTIES COMPILE_OPTIONS "-std=gnu11;-Wno-pedantic"
-)
+add_library(liburbi STATIC IMPORTED GLOBAL)
+set_target_properties(liburbi PROPERTIES IMPORTED_LOCATION "${LIBURBI_ARCHIVE}")
+target_link_libraries(${COMPONENT_LIB} PUBLIC liburbi)
+# The port files include IDF headers that need GNU C11; the runtime archive
+# itself was built -std=c99 -Wpedantic by the Makefile.
+target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror -mlongcalls)
