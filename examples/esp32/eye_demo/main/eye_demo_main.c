@@ -3,8 +3,8 @@
  * display and a button in C, with a REPL session on the USB Serial/JTAG
  * port.  One task owns the VM; the camera task and the button interrupt
  * post to a queue this task drains, so the runtime sees one producer.
- * Every line on the port is one JSON object: the session's replies, and
- * console text as output envelopes. */
+ * Once app_main starts, every line on the port is one JSON object: the
+ * session's replies, and console text as output envelopes. */
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -33,6 +33,7 @@
 #define USJ_RX_BYTES     1024u
 #define USJ_TX_BYTES     8192u   /* = the session's output_buf_cap: a reply frame is never split around a console line */
 #define USJ_DEADLINE_MS  100u
+#define BUSY_YIELD_US    100000u
 /* From the qemu smoke: a deep parse left 41,096 B of a 65,536 B stack, so
  * 24,440 B used; rounded up to 4 KB (24 KB) plus an 8 KB margin.  Floor 16 KB. */
 #define URBI_TASK_STACK  (32u * 1024u)
@@ -123,8 +124,11 @@ static void urbi_task(void *arg)
     eye_display_init(); eye_camera_init(); eye_button_init();
     port_console_puts("ok\r\n");
     report_heap(vm, "ready");
+    n = snprintf(line, sizeof line, "free internal heap %lu B\r\n", (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    if (n > 0 && (size_t)n < sizeof line) port_console_write(line, (size_t)n);
     port_console_puts("Session on this port.  One JSON request per line, e.g. {\"id\":1,\"op\":\"eval\",\"code\":\"1+1\"}\r\n");
 
+    uint64_t busy_since_us = 0;
     for (;;) {
         (void)port_queue_drain(vm);
         urbi_repl_serve_step(srv, 0);
@@ -135,6 +139,16 @@ static void urbi_task(void *arg)
         uint32_t wait_ms = LOOP_CAP_MS;
         if (st == URBI_STEP_RAN) wait_ms = 0;
         else if (st == URBI_STEP_IDLE_UNTIL) { uint64_t now = port_time_us(NULL); uint64_t until = wake_us > now ? (wake_us - now) / 1000u : 0u; if (until < wait_ms) wait_ms = (uint32_t)until; }
+        /* A wait under one tick does not block, so a VM that always has
+         * work would keep IDLE0 off core 0 and trip the task watchdog.
+         * After 100 ms without a blocking wait, give up one tick. */
+        if (pdMS_TO_TICKS(wait_ms) == 0) {
+            uint64_t now = port_time_us(NULL);
+            if (busy_since_us == 0) busy_since_us = now;
+            else if (now - busy_since_us >= BUSY_YIELD_US) { vTaskDelay(1); busy_since_us = 0; }
+        } else {
+            busy_since_us = 0;
+        }
         (void)port_queue_wait(wait_ms);
     }
 }
@@ -149,5 +163,6 @@ void app_main(void)
     usb_serial_jtag_vfs_use_driver();
     esp_log_set_vprintf(port_console_vprintf);
     if (port_queue_init(QUEUE_DEPTH) != 0) esp_restart();
-    xTaskCreatePinnedToCore(urbi_task, "urbi", URBI_TASK_STACK, NULL, tskIDLE_PRIORITY + 1, NULL, 0);
+    if (xTaskCreatePinnedToCore(urbi_task, "urbi", URBI_TASK_STACK, NULL, tskIDLE_PRIORITY + 1, NULL, 0) != pdPASS)
+        fail("urbi task create", NULL);
 }
