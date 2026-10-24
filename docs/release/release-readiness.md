@@ -34,7 +34,7 @@
 | Bar | Threshold | Current | Evidence | Last measured | Owner / blocker |
 |---|---|---|---|---|---|
 | GC pause (worst-case) | ≤1ms under representative reactive workload | not measured | n/a | n/a | **removed from v1.0 claims** — no representative workload defined; GC-pause SLA deferred to v1.x; see `docs/urbi-embedded-design-risks.md` |
-| Flash text size (per target) | <400KB | ARM CM7: ~123 KB; Pico CM0+: ~81 KB; ESP32-S3: ~120 KB; STM32F4 CM4F: <130 KB | `arm-none-eabi-size`/`xtensa-size` per target; per-target caps in `docs/internals/ports.md` | 2026-05-26 (CM7, Pico) | **passing-evidence** — all targets well under 400 KB cap; tracked per bring-up |
+| Flash text size (per target) | <400KB | ARM CM7: ~123 KB; Pico CM0+: ~81 KB; ESP32-S3: 166 KB (hosted `liburbi.a` text, v0.16.3-esp32s3); STM32F4 CM4F: <130 KB | `arm-none-eabi-size`/`xtensa-size` per target; per-target caps in `docs/internals/ports.md` | 2026-05-26 (CM7, Pico); 2026-10-24 (ESP32-S3) | **passing-evidence** — all targets well under 400 KB cap; tracked per bring-up |
 | Heap budget (per target) | per `docs/internals/ports.md` | tracked per target | `hardware-validation.md` | per bring-up | **passing-evidence** — measured at each hardware bring-up; shiptest H1/H2/H3 procedures confirm |
 
 ## Hardware support
@@ -43,7 +43,7 @@
 |---|---|---|---|---|---|
 | Linux x86_64 (host) | shipped | host-test matrix | n/a | n/a | continuously |
 | Raspberry Pi Pico | shipped; rebuilt on the current core and hardware-validated | `cross-pico-repl` | none automated | hardware-validation.md | 2026-10-05 (v0.16.1-pico) |
-| ESP32-S3 | parked until its own tag | retired target name; see `internals/ports.md` | qemu-smoke reactive | hardware-validation.md | 2026-05-16 (v0.7.2) |
+| ESP32-S3 | builds in CI (`cross-esp32s3`) with the qemu smoke; board log pending | `cross-esp32s3`, `test-port-esp32s3` | qemu reactive smoke | hardware-validation.md | 2026-05-16 (v0.7.2) |
 | STM32F4 | shipped; rebuilt on the current core and hardware-validated | `cross-stm32f4`, `test-port-stm32f4` | none automated | hardware-validation.md | 2026-10-06 (v0.16.2-stm32f4) |
 | ARM Cortex-M7 | archive build (CI) | `cross-arm-cortex-m7` | none | n/a | n/a |
 | RISC-V rv32imc | archive build (CI) | `cross-riscv32` | none | n/a | n/a |
@@ -59,7 +59,7 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 | Component manifest version sync | gated | `make check-version-sync` | **passing-evidence** — continuous (since v0.8) |
 | Stdlib bytecode freshness | **gated (W5)** | `make test-stdlib-bytecode-fresh` — passes | **passing-evidence** — regenerate-diff gate added v0.10.6; see `tests/scripts/check-stdlib-fresh.sh` |
 | Freestanding-host gate | gated | `make test-freestanding-host` | **passing-evidence** — continuous (since v0.9.3) |
-| Cross-target cooperative REPL gates | the Pico and the STM32F4 examples build on this core (`make pico-repl-demo`, `make stm32f4-mandelbrot`); the ESP32-S3 example stays parked | `cross-pico-repl`, `cross-stm32f4` (CI); see `internals/ports.md` | **manual procedure** — ESP32/STM32 hardware REPL validated at bring-up (shiptest H1/H2/H3); other targets out of v1.0 scope |
+| Cross-target cooperative REPL gates | the Pico, STM32F4 and ESP32-S3 examples build on this core (`make pico-repl-demo`, `make stm32f4-mandelbrot`, `make esp32s3-eye-demo`) | `cross-pico-repl`, `cross-stm32f4`, `cross-esp32s3` (CI); see `internals/ports.md` | **manual procedure** — the ESP32-S3 session runs in the qemu smoke at v0.16.3-esp32s3, board log pending; the Pico's session hardware-validated at v0.16.1-pico (shiptest H1/H2/H3); other targets out of v1.0 scope |
 | Public doc scrub of workspace-private paths | gated | `make docs-check` w/ scrub check | **passing-evidence** — continuous |
 
 ## C API
@@ -81,11 +81,13 @@ STM32H7 and ESP32-C3 are deferred to v1.x; not in the v1.0 hardware-support clai
 | Compile-budget enforcement | yes | `docs/internals/repl-service.md` | **passing-evidence** — `urbi_realm_set_compile_budget` |
 | Per-session output isolation | yes | `docs/internals/repl-service.md` | **passing-evidence** — per-realm writer model |
 
-REPL is currently a parked feature (Phase 0 runtime-internals test cleanup
-removed the dedicated multi-client-stress and security-gate unit suites,
-along with the `repl-multi-client-stress` / `repl-security` CI jobs); the
-bars above reflect the remaining evidence, and the rest are unverified
-by automation pending v1.x re-attachment.
+The eval service runs on the Pico and ESP32-S3-EYE examples with its own
+unit suites (`test_repl_sessions`, `test_repl_outbuf`), and the networked
+server returned as `tools/urbi-server.c`. What the runtime-internals test
+cleanup removed is the dedicated multi-client-stress and security-gate
+unit suites, along with the `repl-multi-client-stress` / `repl-security`
+CI jobs; the bars above reflect the remaining evidence, and the rest are
+unverified by automation pending v1.x re-attachment.
 
 ## Reactive runtime
 

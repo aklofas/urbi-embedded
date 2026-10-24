@@ -94,6 +94,7 @@ package-lock.json
 tests/qemu/*/build/
 tests/qemu/*/dependencies.lock
 tests/qemu/*/sdkconfig
+tests/qemu/*/managed_components/
 examples/esp32/*/build/
 examples/esp32/*/dependencies.lock
 

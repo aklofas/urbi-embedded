@@ -395,6 +395,49 @@ STM32_CROSS_CC  := $(shell sed -n 's/^CROSS_CC *:= *//p' presets/arm-cortex-m4f.
 stm32f4-mandelbrot: $(BUILDDIR)/urbi cross-arm-cortex-m4f-bytecode-only
 	$(MAKE) -C $(STM32_DEMO_DIR) CC=$(shell command -v $(STM32_CROSS_CC)) HAL_ROOT=$(HAL_ROOT)
 
+# --- the ESP32-S3-EYE demo ------------------------------------------------
+#
+# The ESP32-S3 archive is built by the ESP-IDF toolchain, which lives in
+# the IDF tools directory rather than on a plain PATH.  Every target below
+# runs inside the IDF export, so the preset's compiler, idf.py and
+# qemu-system-xtensa resolve the same way the firmware build resolves them.
+# IDF is taken from IDF_PATH, defaulting to the workspace-root tools/esp-idf
+# one directory above this repository; a missing IDF is an error, not a
+# skip.  The preset is not in PRESETS: releasetest and the cross matrix run
+# on hosts without this toolchain, and preset.mk makes a missing compiler
+# fatal by design.  CI builds it in the espressif/idf container.
+IDF_PATH       ?= $(abspath ../tools/esp-idf)
+IDF_TOOLS_PATH ?= $(abspath ../tools/esp-idf-tools)
+IDF_ENV := test -f "$(IDF_PATH)/export.sh" || \
+	    { echo "esp32s3: no ESP-IDF at $(IDF_PATH) (set IDF_PATH)"; exit 1; }; \
+	  export IDF_PATH="$(IDF_PATH)" IDF_TOOLS_PATH="$(IDF_TOOLS_PATH)"; \
+	  idf_env_log=$$(mktemp) || exit 1; \
+	  . "$(IDF_PATH)/export.sh" >"$$idf_env_log" 2>&1 || \
+	    { echo "esp32s3: sourcing $(IDF_PATH)/export.sh failed (IDF_TOOLS_PATH=$(IDF_TOOLS_PATH)):"; \
+	      cat "$$idf_env_log"; rm -f "$$idf_env_log"; exit 1; }; \
+	  rm -f "$$idf_env_log"
+.PHONY: esp32s3-archives
+esp32s3-archives:
+	@$(IDF_ENV); \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-hosted && \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-bytecode-only && \
+	  xtensa-esp32s3-elf-size --totals build/xtensa-esp32s3-hosted/liburbi.a | tail -1 && \
+	  xtensa-esp32s3-elf-size --totals build/xtensa-esp32s3-bytecode-only/liburbi.a | tail -1
+
+ESP32_DEMO_DIR := examples/esp32/eye_demo
+PORT ?= /dev/ttyACM0
+.PHONY: esp32s3-eye-demo esp32s3-flash
+esp32s3-eye-demo: $(BUILDDIR)/urbi
+	@$(IDF_ENV); \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-hosted && \
+	  idf.py -C $(ESP32_DEMO_DIR) \
+	      -DURBI_HOST_BIN=$(abspath $(BUILDDIR)/urbi) \
+	      -DLIBURBI_ARCHIVE=$(abspath build/xtensa-esp32s3-hosted/liburbi.a) \
+	      build && \
+	  xtensa-esp32s3-elf-size $(ESP32_DEMO_DIR)/build/eye_demo.elf
+esp32s3-flash:
+	@$(IDF_ENV); idf.py -C $(ESP32_DEMO_DIR) -p $(PORT) flash
+
 # A different compiler behind the same name rebuilds the archive.
 .PHONY: test-flagstamp-toolchain
 test-flagstamp-toolchain:
@@ -656,6 +699,32 @@ test-port-stm32f4:
 	done
 	@echo "PASS: STM32F4 port host tests"
 
+# The ESP32-S3 component's host-runnable tests: the arena allocator, the
+# console framing and the event queue, compiled with the host compiler
+# against a pthread mock of the FreeRTOS queue and a recording stand-in
+# for urbi_inject_event.  The USB Serial/JTAG transport, the clock and
+# the IDF log hook have no honest host test; the qemu smoke and the
+# board gate are theirs.
+PORT_ESP32S3_DIR   := components/esp32-idf
+PORT_ESP32S3_TESTS := test_port_allocator test_port_console test_port_queue
+.PHONY: test-port-esp32s3
+test-port-esp32s3:
+	@mkdir -p build/port_esp32s3
+	@for t in $(PORT_ESP32S3_TESTS); do \
+	    case $$t in \
+	      test_port_allocator) src=port_allocator.c ;; \
+	      test_port_console)   src=port_console.c ;; \
+	      test_port_queue)     src=port_queue.c ;; \
+	    esac; \
+	    $(CC) -std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_PORT_TEST=1 -DURBI_ARENA_BYTES='(128U*1024U)' \
+	        -D_POSIX_C_SOURCE=200809L \
+	        -Iinclude -I$(PORT_ESP32S3_DIR)/src/port -Itests/port_esp32s3 \
+	        tests/port_esp32s3/$$t.c tests/port_esp32s3/mock_freertos.c $(PORT_ESP32S3_DIR)/src/port/$$src \
+	        -lpthread -o build/port_esp32s3/$$t || exit 1; \
+	    ( ulimit -v 2000000; timeout 60 build/port_esp32s3/$$t ) || exit 1; \
+	done
+	@echo "PASS: ESP32-S3 port host tests"
+
 # `make test`: the frontend runner, the runtime runner, the layering
 # gate, the .chk corpus driven through the urbi binary, and the two shell
 # harnesses that cover what the corpus cannot see -- the REPL smoke run
@@ -833,7 +902,7 @@ RELEASETEST_PHASE1 := \
     test-wire-format-determinism \
     test-stdlib-bytecode-fresh test-bake-smoke \
     test-api-manifest \
-    test-chk-runner test-freestanding-host test-port-stm32f4 test-fuzz-smoke test-o2 test-embedding-guide \
+    test-chk-runner test-freestanding-host test-port-stm32f4 test-port-esp32s3 test-fuzz-smoke test-o2 test-embedding-guide \
     cross-all test-cross-missing-toolchain test-flagstamp-toolchain
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
@@ -1081,15 +1150,16 @@ clean:
 #
 # docs-check runs markdown lint + intra-repo link checking over docs/, the
 # top-level README / CONTRIBUTING / CHANGELOG, example READMEs, component
-# READMEs, and tests/qemu docs. Generated build/ and _deps/ trees are
-# excluded so vendored pico-sdk / ESP-IDF sources are not scanned.
+# READMEs, and tests/qemu docs. Generated build/, _deps/ and IDF's
+# managed_components/ trees are excluded so vendored pico-sdk / ESP-IDF
+# sources are not scanned.
 # Gated in CI via the docs-check job (see .github/workflows/ci.yml).
 # Requires markdownlint-cli2 and markdown-link-check in PATH; install with:
 #     npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
 
 DOCS_LINT_TARGETS := 'docs/**/*.md' README.md CONTRIBUTING.md CHANGELOG.md \
     'examples/**/*.md' 'components/**/*.md' 'tests/qemu/**/*.md' \
-    '!**/build/**' '!**/_deps/**'
+    '!**/build/**' '!**/_deps/**' '!**/managed_components/**'
 
 docs-check: docs-check-tools
 	markdownlint-cli2 --config .markdownlint.yaml $(DOCS_LINT_TARGETS)
@@ -1097,7 +1167,7 @@ docs-check: docs-check-tools
 	@find docs examples components tests/qemu \
 	    README.md CONTRIBUTING.md CHANGELOG.md \
 	    -name '*.md' -type f \
-	    ! -path '*/build/*' ! -path '*/_deps/*' \
+	    ! -path '*/build/*' ! -path '*/_deps/*' ! -path '*/managed_components/*' \
 	    -exec markdown-link-check --quiet --config .markdown-link-check.json {} +
 
 docs-check-tools:
@@ -1125,3 +1195,16 @@ check-version-sync:
 
 .PHONY: test-unit test-probes test-bench test-embedding-guide test-flagstamp-toolchain
 .PHONY: all core test test-asan test-ubsan test-debug test-switch test-cache-verify clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools check-version-sync coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-chunk fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-api-manifest test-gc-stress test-chk-runner test-freestanding-host test-fuzz-smoke test-o2 force-flagstamp pico-repl-demo stm32f4-mandelbrot
+
+# The qemu smoke: the component's arena, a baked workload, the event queue
+# and a session, run under `idf.py qemu` against its marker file.
+SMOKE_DIR := tests/qemu/reactive_smoke
+.PHONY: esp32s3-smoke
+esp32s3-smoke: $(BUILDDIR)/urbi
+	@$(IDF_ENV); \
+	  $(MAKE) --no-print-directory cross-xtensa-esp32s3-hosted && \
+	  idf.py -C $(SMOKE_DIR) \
+	      -DURBI_HOST_BIN=$(abspath $(BUILDDIR)/urbi) \
+	      -DLIBURBI_ARCHIVE=$(abspath build/xtensa-esp32s3-hosted/liburbi.a) \
+	      build && \
+	  cd $(SMOKE_DIR) && QEMU_TIMEOUT_S=60 ./run_smoke.sh

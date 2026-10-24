@@ -82,6 +82,39 @@
 
 ## ESP32-S3-EYE
 
+### 2026-10-DD — v0.16.3-esp32s3 (board log pending)
+
+- **Board:** ESP32-S3-EYE v2.2 (Espressif, Xtensa LX7 dual-core,
+  ESP32-S3 N8R8: 8 MB flash, 8 MB octal PSRAM, OV2640 camera, 240×240
+  ST7789 LCD, hardware single-precision FPU).
+- **Toolchain:** the bench's ESP-IDF v6.0.1 `xtensa-esp32s3-elf-gcc`
+  (named at the gate).
+- **SDK:** ESP-IDF v6.0.1; `esp_video` 2.5.0 and `esp_cam_sensor` 2.6.0
+  from the component registry.
+- **Firmware artifact:** `examples/esp32/eye_demo/build/eye_demo.bin`
+  built by `make esp32s3-eye-demo`; `eye_demo.elf` text 360,169 /
+  data 135,046 / bss 1,101,871 B; `eye_demo.bin` 495,328 B.
+- **Flashing:** `make esp32s3-flash PORT=/dev/ttyACM0`; console and
+  session on `picocom -b 115200 /dev/ttyACM0`.
+- **Smoke steps:**
+  1. Boot heap: the `boot heap:` line shows `alloc live` under
+     49,152 B (48,748 B under qemu). Record the `ready:` line in the
+     board log; there is no cap on it at this tag.
+  2. Tracking: the LCD shows the camera feed with a crosshair following
+     a coloured object; the `stats:` line's count rises.
+  3. Button: the BOOT button cycles the target colour; the `stats:` line
+     names the new target.
+  4. Session: from picocom, `echo("hi")`, `1+1` and `Tracker.count`
+     answer; `boot.stop()` freezes the crosshair;
+     `at (blob_seen?(var p)) draw_crosshair(p.and(65535), p.shr(16).and(65535))`
+     from the session resumes it.
+  5. Five minutes of tracking: the `stats:` line's live bytes stay flat
+     within 1 KB of the first; no `OutOfMemoryError`, no reset, no
+     task-watchdog warning. An eval that never ends, typed on purpose at
+     step 4, trips the watchdog by design and is not a failure of this item.
+- **Observed output:** pending.
+- **Verifier:** the owner.
+
 ### 2026-05-16 — v0.7.2-esp32
 
 - **Board:** ESP32-S3-EYE dev kit (Espressif, Xtensa LX7 dual-core, with

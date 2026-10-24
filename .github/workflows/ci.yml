@@ -144,6 +144,53 @@ jobs:
           path: examples/stm32f4/mandelbrot/build/mandelbrot.bin
           retention-days: 14
 
+  cross-esp32s3:
+    name: ESP32-S3 demo firmware and qemu smoke (ESP-IDF v6.0.1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: espressif/idf:v6.0.1
+    steps:
+      # The image's git refuses a checkout owned by another user.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory '*'
+      - uses: actions/checkout@v5
+      - name: Cache the managed components
+        uses: actions/cache@v4
+        with:
+          path: |
+            examples/esp32/eye_demo/managed_components
+          key: idf-components-${{ hashFiles('examples/esp32/eye_demo/main/idf_component.yml') }}
+      # The image carries IDF at /opt/esp/idf and its tools under
+      # /opt/esp/tools; its export.sh takes IDF_TOOLS_PATH=/opt/esp.  The
+      # Makefile sources the export itself.
+      - name: Build the host urbi, the hosted xtensa archive and the firmware
+        run: make esp32s3-eye-demo IDF_PATH=/opt/esp/idf IDF_TOOLS_PATH=/opt/esp
+      - name: The bytecode-only archive and its freestanding gate
+        run: make esp32s3-archives IDF_PATH=/opt/esp/idf IDF_TOOLS_PATH=/opt/esp
+      - name: Host tests of the component
+        run: make test-port-esp32s3
+      - name: qemu smoke
+        run: make esp32s3-smoke IDF_PATH=/opt/esp/idf IDF_TOOLS_PATH=/opt/esp
+      - name: Footprint
+        run: |
+          export IDF_PATH=/opt/esp/idf IDF_TOOLS_PATH=/opt/esp
+          . /opt/esp/idf/export.sh >/dev/null 2>&1
+          xtensa-esp32s3-elf-size examples/esp32/eye_demo/build/eye_demo.elf
+          ls -l examples/esp32/eye_demo/build/eye_demo.bin
+      - name: Keep the image
+        uses: actions/upload-artifact@v4
+        with:
+          name: eye_demo-bin
+          path: examples/esp32/eye_demo/build/eye_demo.bin
+          retention-days: 14
+      - name: Keep the UART log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-uart-log
+          path: /tmp/urbi_qemu_uart.log
+
   lint:
     name: lint
     runs-on: ubuntu-latest

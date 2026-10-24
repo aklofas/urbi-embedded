@@ -2,8 +2,8 @@
 # Bumped in lockstep with every milestone tag. Verified by
 # tests/scripts/check-version-sync.sh (run by make check-version-sync
 # and the GHA version-sync job).
-version: "0.16.2-stm32f4"
-description: "Embeddable urbiscript runtime — reactive, parallel-by-default, event-driven scripting for embedded systems."
+version: "0.16.3-esp32s3"
+description: "Embeddable urbiscript runtime for ESP-IDF projects: the port glue plus liburbi.a as built by the repository Makefile (make esp32s3-archives); not built by idf.py alone."
 url: "https://github.com/aklofas/urbi-embedded"
 license: "BSD-3-Clause"
 targets:

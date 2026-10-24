@@ -1,37 +1,24 @@
-# sdkconfig.defaults — INTERNAL-SRAM smoke preset for QEMU.
-#
-# Per spec §6.1, espressif/qemu's PSRAM emulation is experimental
-# (works for small allocations, not battle-tested at >1 MB), so the
-# smoke uses INTERNAL SRAM exclusively.  reactive_smoke_main.c
-# installs a local `smoke_alloc` wrapping heap_caps_malloc with
-# MALLOC_CAP_INTERNAL rather than the port's PSRAM-backed
-# port_psram_alloc.
+# sdkconfig.defaults for the qemu smoke.  ESP-IDF seeds the build's
+# sdkconfig from this file on the first build.
 
-# Target SoC.  QEMU machine selection happens via `idf.py --preview
-# set-target esp32s3` before build; this just locks the kconfig
-# branch.
+# Target SoC.
 CONFIG_IDF_TARGET="esp32s3"
 
-# 4 MB flash — partitions.csv uses a 1 MB factory app, well under cap.
+# 4 MB flash; partitions.csv holds a 1 MB factory app.
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
-# PSRAM disabled.  smoke_alloc requests INTERNAL caps so PSRAM init
-# is not needed, and skipping it avoids the experimental QEMU
-# emulation path.
+# No PSRAM: the runtime's arena is in internal SRAM, as on the board.
 CONFIG_SPIRAM=n
 
-# 100 Hz tick.  Matches the FreeRTOS scheduler determinism contract
-# used throughout the urbi runtime (sched preset CI gates run at
-# 100 Hz).
+# 100 Hz tick, the rate the runtime's scheduler timing assumes.
 CONFIG_FREERTOS_HZ=100
 
-# Use the custom partition table at partitions.csv (sibling file).
+# Custom partition table (partitions.csv beside this file).
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# Main task stack: default is 3584 B.  urbi_step's cooperative dispatch
-# uses several KB of CallFrame stack; running it directly from app_main
-# blows the small main task stack.  Bumping to 16 KB matches eye_demo's
-# dedicated urbi task budget (URBI_STACK_WORDS = 8 KB / sizeof StackType_t)
-# with headroom for IDF stack frames.
+# 16 KB main task stack, as in the demo.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# Heap arena for the runtime, in internal SRAM; the demo's figure.
+CONFIG_URBI_ARENA_BYTES=131072

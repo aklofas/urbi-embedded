@@ -27,8 +27,6 @@
 #include "esp_lcd_panel_vendor.h"
 #include "driver/spi_master.h"
 
-#include "urbi/urbi.h"
-
 #include "eye_camera.h"  /* eye_camera_qbuf — buffer return primitive */
 #include "eye_display.h"
 #include "crosshair.h"
@@ -59,14 +57,14 @@ typedef struct {
  * starts, then read by display_task_body.  No synchronisation needed.
  *
  * crosshair_x / crosshair_y are volatile because they are written from
- * the urbi VM task (via c_draw_crosshair) and read from the display task
+ * the VM task (via display_set_crosshair) and read from the display task
  * without an explicit fence.  Aligned 32-bit writes on the Xtensa LX7 are
  * atomic, but writing TWO ints isn't atomic as a pair — there is a brief
  * window where x updates before y.  We tolerate this tearing: it is
  * visually invisible at 30 Hz refresh and adding a mutex on the display
- * hot path would cost more than the artefact is worth.  See T34 commit
- * subject ("volatile pair write, atomic on LX7") for the precise
- * semantic. */
+ * hot path would cost more than the artefact is worth.  They are
+ * statically initialised, so display_set_crosshair is safe before
+ * eye_display_init. */
 static esp_lcd_panel_handle_t lcd;
 static QueueHandle_t          frame_q;
 static volatile int           crosshair_x = -1;
@@ -192,8 +190,8 @@ static void display_task_body(void *arg)
         }
         (void)eye_camera_qbuf(frame.qbuf_index);
 
-        /* Overlay the latest crosshair coordinates (set by c_draw_crosshair
-         * on the urbi VM task).  Reads volatile pair non-atomically; the
+        /* Overlay the latest crosshair coordinates (set by
+         * display_set_crosshair on the VM task).  Reads volatile pair non-atomically; the
          * tearing window is one frame and visually invisible.
          *
          * The Y coord is pre-mirrored to match the framebuffer-Y flip in
@@ -206,26 +204,9 @@ static void display_task_body(void *arg)
     }
 }
 
-/* Signature note: the host-fn type at <urbi/urbi.h>:295 is
- *
- *     int (*urbi_native_method_fn)(struct UVM *vm, UValue self,
- *                                  UValue *args, uint8_t nargs, UValue *out);
- *
- * The brainstorm spec sketch in §5.3 used a `UStrand *` / `UValue` return
- * convention that does not match the real v0.7.1 surface — corrected here
- * to the canonical urbi_native_method_fn shape (same drift as T28
- * c_set_target_color; see eye_camera.c).  Wires straight through:
- *
- *     urbi_register(vm, realm, "draw_crosshair", c_draw_crosshair);
- *
- * Argument convention (from spec §5.5 / urbiscript):
- *
- *     draw_crosshair(x, y)
- *
- * where (x, y) are blob centroid coordinates in the 240x240 camera
- * frame.  No coordinate-space conversion is needed because the camera
- * and display frames are now both 240x240 (the legacy 320x240 →
- * 240x240 centre-crop disappeared with the esp_video migration).
+/* Set the pending crosshair to (x, y) in the 240x240 camera frame; the
+ * VM task's draw_crosshair native clamps before calling.  No coordinate
+ * conversion: the camera and display frames are both 240x240.
  *
  * Concurrency: writes go to two `volatile int` slots shared with the
  * display task on core 1.  Aligned 32-bit writes are atomic on the
@@ -240,21 +221,4 @@ void display_set_crosshair(int x, int y)
      * See header comment above for why this is acceptable. */
     crosshair_x = x;
     crosshair_y = y;
-}
-
-int c_draw_crosshair(struct UVM *vm, UValue self,
-                     UValue *args, uint8_t nargs, UValue *out)
-{
-    (void)vm; (void)self;
-
-    if (nargs < 2 || args == NULL) {
-        if (out) *out = urbi_make_nil();
-        return UEXEC_OK;
-    }
-
-    display_set_crosshair(urbi_value_as_int(args[0]),
-                          urbi_value_as_int(args[1]));
-
-    if (out) *out = urbi_make_nil();
-    return UEXEC_OK;
 }

@@ -17,8 +17,6 @@
 
 #include <stdint.h>
 
-#include "urbi/urbi.h"   /* struct UVM, UValue, urbi_native_method_fn */
-
 /* Initialise SPI2 + ST7789 panel + display FreeRTOS task pinned to core 1.
  * Must be called once after esp_video_init.  The task takes ownership of
  * the frame queue for the lifetime of the program. */
@@ -33,29 +31,12 @@ void eye_display_init(void);
  * and blocks the camera task indefinitely on its next VIDIOC_DQBUF. */
 void display_post_frame(uint16_t *buf, int w, int h, int qbuf_index);
 
-/* Host-fn (matches urbi_native_method_fn from <urbi/urbi.h>) that
- * urbiscript calls to update the pending crosshair coordinates:
- *
- *   draw_crosshair(x, y)
- *
- * Both args are urbiscript integers in 240x240 image coordinates (matching
- * the camera blob centroid).  The crosshair appears on the next frame the
- * display task processes.  Returns nil.
- *
- * Signature note: the brainstorm spec sketch in §5.3 used a `UStrand *` /
- * `UValue` return convention that does not match the real v0.7.1 surface —
- * corrected here to the canonical urbi_native_method_fn shape (same drift
- * as T28 c_set_target_color; see eye_camera.c). */
-int c_draw_crosshair(struct UVM *vm, UValue self,
-                     UValue *args, uint8_t nargs, UValue *out);
-
-/* C-side helper that c_draw_crosshair delegates to.  Writes the
- * volatile (x, y) pair shared with the display task; the next frame
- * picks them up.  Exposed for any future C-side caller that wants to
- * push a crosshair coordinate without going through the urbi host-fn
- * dispatch surface (e.g., a debug overlay from a separate task).
- * Safe from any task — the volatile pair tolerates the cross-core
- * non-atomic-as-a-pair race (tearing is one frame, visually invisible). */
+/* Set the pending crosshair coordinates in 240x240 image coordinates
+ * (matching the camera blob centroid); the next frame the display task
+ * processes draws it.  Writes the volatile (x, y) pair shared with the
+ * display task.  Safe from any task, and before eye_display_init: the
+ * pair is static.  The pair is not atomic as a pair; a torn read lasts
+ * one frame and is visually invisible.  The caller clamps to 0..239. */
 void display_set_crosshair(int x, int y);
 
 #endif /* EYE_DISPLAY_H */

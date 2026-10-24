@@ -40,7 +40,7 @@ For contributors building or modifying the C99 implementation.
 - [The runtime](internals/runtime.md) — values, the collector, objects, strands, the scheduler, errors, realms, booting
 - [Reactive runtime](internals/reactive-runtime.md) — watchers in full: modes, the dirty set, the drain
 - [Error channels](internals/error-channels.md) — where a failure goes and who can see it
-- [Embedded ports](internals/ports.md) — per-target record; the Pico and STM32F4 are rebuilt on this core, ESP32-S3 is parked until its own tag
+- [Embedded ports](internals/ports.md) — per-target record; the Pico, STM32F4 and ESP32-S3 are rebuilt on this core
 - [Design decisions](internals/design-decisions.md) — rationale log for implementation choices
 - [Test harness](internals/test-harness.md) — the four runners and how to add to each
 - [Code style](STYLE.md) — C naming, memory model, freestanding discipline, const-correctness
@@ -55,7 +55,7 @@ For contributors building or modifying the C99 implementation.
 | x86_64 | Linux (glibc) | system GCC / Clang | gating CI |
 | ARM Cortex-M7 | STM32H7 (bare-metal) | `arm-none-eabi-gcc` | gating CI (cross-compile sanity) |
 | RISC-V rv32imc | ESP32-C3 (bare-metal) | `riscv64-unknown-elf-gcc` | gating CI (cross-compile sanity) |
-| Xtensa LX7 | ESP32-S3 | — | post-v1.0 |
+| Xtensa LX7 | ESP32-S3 (ESP32-S3-EYE) | `xtensa-esp32s3-elf-gcc` (ESP-IDF v6.0.1) | gating CI (`cross-esp32s3`: firmware build + qemu smoke); board log pending |
 
 Hardware-in-loop validation on physical STM32H7 and ESP32-C3 is a gate for the `v1.0.0` release. Cross-compile CI jobs verify that the code compiles clean for ARM and RISC-V on every commit; they do not run the test suite on hardware.
 
@@ -128,7 +128,7 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | [Design decisions](internals/design-decisions.md) | Rationale log: choices made during implementation with the alternatives that were rejected | `v0.1.0-skeleton` |
 | [Reactive runtime](internals/reactive-runtime.md) | One watcher type: modes, the dirty set, the drain, what an `at` edge means and why `whenever` is level-triggered | `v0.5.0-reactive` |
 | [Error channels](internals/error-channels.md) | Where a runtime failure goes and who can observe it | `v0.13.6-consistency` |
-| [Embedded ports](internals/ports.md) | Per-target bring-up record; the Pico and STM32F4 are rebuilt on this core, ESP32-S3 is parked until its own tag | `v0.7.2-esp32` |
+| [Embedded ports](internals/ports.md) | Per-target bring-up record; the Pico, STM32F4 and ESP32-S3 are rebuilt on this core | `v0.7.2-esp32` |
 | [REPL service](internals/repl-service.md) | The NDJSON eval protocol and the cooperative service | `v0.9.1-repl-service` |
 | [Assertion discipline](internals/assertion-discipline.md) | `URBI_REQUIRE` vs `URBI_INTERNAL_ASSERT`: which fires where, and when to use which | `v0.10.1-invariants` |
 | [Build system](internals/build-system.md) | Targets, build directories, flag stamping, the stdlib bake cycle | `v0.6.1-stdlib` |

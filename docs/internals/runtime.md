@@ -474,9 +474,9 @@ one slice, `urbi_register` binds a C function to a name, and
 ## What is not here
 
 In the tree but out of the build, parked until each one's own tag: the
-ROS2 bridge (`src/ros/`), the Standard Robotics overlay
-(`src/urobotics/`), and every hardware port under `examples/` and
-`components/`. See [ports.md](ports.md). The networked REPL server is no
+ROS2 bridge (`src/ros/`) and the Standard Robotics overlay
+(`src/urobotics/`). The hardware ports under `examples/` and
+`components/` are rebuilt on this core; see [ports.md](ports.md). The networked REPL server is no
 longer in `src/repl/` at all — it returned as the separate `urbi-server`
 tool (`tools/urbi-server.c`), built on the same `UTransport` the
 cooperative service already uses.
