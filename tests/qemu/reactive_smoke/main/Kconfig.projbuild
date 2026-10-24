@@ -7,4 +7,6 @@ menu "Reactive Smoke Configuration"
             The static arena the runtime allocates from, the same figure
             the ESP32-S3-EYE demo uses so the smoke measures the board's
             configuration.  The collector is told three quarters of it.
+            Values above the default may not link in the demo, beside the
+            display's static frame buffer.
 endmenu
