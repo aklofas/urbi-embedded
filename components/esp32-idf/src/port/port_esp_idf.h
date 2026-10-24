@@ -39,8 +39,13 @@ uint64_t port_time_us(void *ud);                                /* clock hook: e
  * output envelope per line on the "console" channel, through the sink
  * the shim installs (the USB Serial/JTAG transport's raw write).  A line
  * is never split across two envelopes; a line the sink cannot take whole
- * within its deadline is dropped whole. */
-typedef int (*port_console_sink_fn)(const void *buf, size_t n);  /* returns bytes accepted */
+ * within its deadline is dropped whole.
+ *
+ * The sink is all-or-nothing: it accepts the whole buffer and returns n,
+ * or accepts none of it and returns 0.  begin/part/end, write and puts
+ * share one static staging buffer and belong to the VM task.
+ * port_console_vprintf frames on its own stack and is safe from any task. */
+typedef int (*port_console_sink_fn)(const void *buf, size_t n);  /* n if accepted whole, else 0 */
 void     port_console_init(port_console_sink_fn sink);
 void     port_console_begin(void);
 void     port_console_part(const char *s, size_t n);
@@ -72,10 +77,17 @@ int      port_queue_wait(uint32_t timeout_ms);                 /* blocks until a
 uint32_t port_queue_dropped(void);
 uint32_t port_queue_inject_failures(void);                     /* failed urbi_inject_event calls during drain */
 
-/* The USB Serial/JTAG byte stream as a UTransport. */
+/* The USB Serial/JTAG byte stream as a UTransport.  The driver's write is
+ * all-or-nothing against its TX ring, so the transport's write sends at
+ * most tx_buf bytes per call and the REPL service re-offers the rest.  A
+ * console envelope can only land between two such chunks, so a tx_buf at
+ * least as large as the session's output_buf_cap keeps a REPL frame from
+ * being split around a console line.  The raw write (the console sink)
+ * refuses anything longer than tx_buf, so console lines longer than the
+ * TX buffer are always dropped. */
 int      port_usb_serial_jtag_init(size_t rx_buf, size_t tx_buf, uint32_t write_deadline_ms);  /* 0 ok */
 void     port_usb_serial_jtag_vtable(UTransport *out);
-int      port_usb_serial_jtag_raw_write(const void *buf, size_t n);  /* the console sink */
+int      port_usb_serial_jtag_raw_write(const void *buf, size_t n);  /* the console sink: n or 0 */
 
 #ifdef __cplusplus
 }

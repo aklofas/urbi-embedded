@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 #include "mock_freertos.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "urbi/urbi.h"
@@ -16,7 +17,11 @@ QueueHandle_t xQueueCreate(UBaseType_t len, UBaseType_t item_size)
 }
 BaseType_t xQueueSend(QueueHandle_t h, const void *item, TickType_t ticks)
 {
-    (void)ticks;                      /* the port always posts with 0 ticks */
+    /* The port must never block a poster: any wait is a bug. */
+    if (ticks != 0) {
+        fprintf(stderr, "mock xQueueSend: posted with %u ticks; the port must post with 0\n", (unsigned)ticks);
+        abort();
+    }
     mq *q = (mq *)h;
     pthread_mutex_lock(&q->mu);
     if (q->count == q->len) { pthread_mutex_unlock(&q->mu); return pdFALSE; }

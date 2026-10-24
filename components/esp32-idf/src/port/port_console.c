@@ -5,13 +5,21 @@
  *   {"kind":"output","channel":"console","msg":"<escaped line>"}\n
  *
  * so a host reading the USB Serial/JTAG stream sees nothing but JSON.  A
- * line is staged whole in a static buffer and offered to the sink once.
- * If the sink takes less than all of it, or the line outgrew the buffer,
- * the line is dropped and counted: nothing further is offered, so the
- * wire never carries half a line followed by another envelope.
+ * line is framed whole in a buffer and offered to the sink once.  The
+ * sink is all-or-nothing; if it refuses the line, or the line outgrew its
+ * buffer, the line is dropped and counted, so the wire never carries half
+ * a line followed by another envelope.
  *
- * Called from the task that owns the VM only (the writer, the diag hook
- * and the shim's own prints); the staging buffer has no lock. */
+ * Two paths, two kinds of buffer:
+ *   - begin/part/end (and write/puts, which compose them) stage the line
+ *     in one static buffer with no lock.  They are for the task that owns
+ *     the VM: the writer, the diag hook and the shim's own prints.
+ *   - vprintf is installed with esp_log_set_vprintf and runs on whatever
+ *     task logs.  It formats and frames into buffers on its own stack and
+ *     offers the envelope to the sink directly, never touching the staged
+ *     line, so it is safe from any task, even while a staged line is open.
+ * The dropped counter is the only state both paths share; it is bumped
+ * atomically. */
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -52,6 +60,39 @@ static size_t json_escape_byte(unsigned char c, char out[6])
     }
 }
 
+static void count_drop(void)
+{
+    __atomic_add_fetch(&s_dropped, 1U, __ATOMIC_RELAXED);
+}
+
+/* Escapes s into line[*used..], leaving room for the tail so a line that
+ * fits can always be closed.  Returns 0 once the line no longer fits. */
+static int frame_part(char *line, size_t cap, size_t *used, const char *s, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        char esc[6];
+        size_t k = json_escape_byte((unsigned char)s[i], esc);
+        if (*used + k > cap - (sizeof s_tail - 1U)) return 0;
+        memcpy(&line[*used], esc, k);
+        *used += k;
+    }
+    return 1;
+}
+
+/* Closes the envelope and offers it to the sink once. */
+static void frame_offer(char *line, size_t used)
+{
+    port_console_sink_fn sink = s_sink;
+    if (sink == NULL) {
+        count_drop();
+        return;
+    }
+    memcpy(&line[used], s_tail, sizeof s_tail - 1U);
+    size_t total = used + sizeof s_tail - 1U;
+    int took = sink(line, total);
+    if (took < 0 || (size_t)took != total) count_drop();
+}
+
 void port_console_init(port_console_sink_fn sink)
 {
     s_sink = sink;
@@ -68,29 +109,16 @@ void port_console_begin(void)
 
 void port_console_part(const char *s, size_t n)
 {
-    for (size_t i = 0; i < n && !s_overflowed; i++) {
-        char esc[6];
-        size_t k = json_escape_byte((unsigned char)s[i], esc);
-        /* Leave room for the tail so a line that fits is always closed. */
-        if (s_used + k > sizeof s_line - (sizeof s_tail - 1U)) {
-            s_overflowed = 1;
-            break;
-        }
-        memcpy(&s_line[s_used], esc, k);
-        s_used += k;
-    }
+    if (!s_overflowed && !frame_part(s_line, sizeof s_line, &s_used, s, n)) s_overflowed = 1;
 }
 
 void port_console_end(void)
 {
-    if (s_overflowed || s_sink == NULL) {
-        s_dropped++;
+    if (s_overflowed) {
+        count_drop();
         return;
     }
-    memcpy(&s_line[s_used], s_tail, sizeof s_tail - 1U);
-    size_t total = s_used + sizeof s_tail - 1U;
-    int took = s_sink(s_line, total);
-    if (took < 0 || (size_t)took != total) s_dropped++;
+    frame_offer(s_line, s_used);
 }
 
 void port_console_write(const char *s, size_t n)
@@ -107,15 +135,20 @@ void port_console_puts(const char *s)
 
 int port_console_vprintf(const char *fmt, va_list ap)
 {
-    char buf[CONSOLE_FMT_BYTES];
-    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    char text[CONSOLE_FMT_BYTES];
+    int n = vsnprintf(text, sizeof text, fmt, ap);
     if (n < 0) return n;
-    size_t len = (size_t)n < sizeof buf ? (size_t)n : sizeof buf - 1U;
-    port_console_write(buf, len);
+    size_t len = (size_t)n < sizeof text ? (size_t)n : sizeof text - 1U;
+
+    char line[CONSOLE_LINE_BYTES];
+    size_t used = sizeof s_head - 1U;
+    memcpy(line, s_head, used);
+    if (frame_part(line, sizeof line, &used, text, len)) frame_offer(line, used);
+    else count_drop();
     return n;
 }
 
 uint32_t port_console_dropped_lines(void)
 {
-    return s_dropped;
+    return __atomic_load_n(&s_dropped, __ATOMIC_RELAXED);
 }

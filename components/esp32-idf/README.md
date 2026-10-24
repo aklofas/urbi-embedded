@@ -58,5 +58,17 @@ where the repository build put its outputs:
 
 One task owns the VM: it steps it, drains the queue and is the only
 caller of `urbi_inject_event`.  Every other task and every interrupt
-reaches the VM by posting to the queue.  The console sink is called from
-the VM task only.
+reaches the VM by posting to the queue.
+
+The console has two paths.  The staging calls (`port_console_begin`,
+`port_console_part`, `port_console_end`, and `port_console_write` and
+`port_console_puts`, which compose them) share one static buffer and are
+for the VM task only.  `port_console_vprintf` formats and frames on its
+own stack and hands the envelope straight to the sink, so it is safe
+from any task; that is why it can be installed with
+`esp_log_set_vprintf`.  The sink is all-or-nothing, so envelopes from
+different tasks reach the wire whole.
+
+The USB Serial/JTAG TX buffer should be at least as large as the REPL
+session's output buffer, so a REPL frame is never split around a console
+line.  Console lines longer than the TX buffer are always dropped.
